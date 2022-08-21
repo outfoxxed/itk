@@ -1,0 +1,9 @@
+[package]
+name = "itk"
+version = "0.0.0-reserve.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Reserved for future use - see readme"
+readme = "README.md"
+
+[lib]
