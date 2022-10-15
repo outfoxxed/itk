@@ -1,0 +1,9 @@
+[package]
+name = "gl_painter"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+bytemuck = "^1.12"
+gl = "^0.14"
+thiserror = "^1.0"
