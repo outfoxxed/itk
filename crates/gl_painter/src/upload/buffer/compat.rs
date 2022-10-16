@@ -7,13 +7,17 @@
 use std::{
 	ffi::c_void,
 	mem::{self, MaybeUninit},
-	ops::Range,
+	ops::Range, marker::PhantomData, sync::MutexGuard,
 };
 
 use gl::types::{GLenum, GLsizeiptr, GLuint};
 
 use super::GpuBuffer;
 
+/// GPU buffer implemented with `glBufferSubData`
+///
+/// !Send to ensure the backing GL buffer is deleted
+/// on the same thread
 pub struct CompatBuffer<T: bytemuck::Pod> {
 	buffer_type: GLenum,
 	buffer: Vec<MaybeUninit<T>>,
@@ -21,6 +25,7 @@ pub struct CompatBuffer<T: bytemuck::Pod> {
 	flush_region: Option<Range<usize>>,
 	gl_buffer_size: usize,
 	backing_buffer_changed: bool,
+	_unsend: PhantomData<MutexGuard<'static, ()>>,
 }
 
 impl<T: bytemuck::Pod> CompatBuffer<T> {
@@ -32,6 +37,7 @@ impl<T: bytemuck::Pod> CompatBuffer<T> {
 			flush_region: None,
 			gl_buffer_size: 0,
 			backing_buffer_changed: false,
+			_unsend: PhantomData,
 		}
 	}
 }
@@ -128,5 +134,13 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for CompatBuffer<T> {
 
 	fn clear_buffer_changed(&mut self) {
 		self.backing_buffer_changed = false;
+	}
+}
+
+impl<T: bytemuck::Pod> Drop for CompatBuffer<T> {
+	fn drop(&mut self) {
+		unsafe {
+			gl::DeleteBuffers(1, &mut self.gl_buffer);
+		}
 	}
 }

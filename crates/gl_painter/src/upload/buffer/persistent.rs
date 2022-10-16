@@ -17,6 +17,10 @@ use super::GpuBuffer;
 
 // FIXME: Performance seems a bit lower than it should be
 // FIXME: Possible synchronization issues (gpu still reading as buffer is overwritten)
+/// GPU buffer implemented with persistent mapped buffers
+///
+/// !Send to ensure the backing GL buffer is deleted
+/// on the same thread
 pub struct PersistentBuffer<T: bytemuck::Pod> {
 	buffer_type: GLenum,
 	buffer: Vec<MaybeUninit<T>>,
@@ -27,6 +31,9 @@ pub struct PersistentBuffer<T: bytemuck::Pod> {
 	flush_fence: GLsync,
 	backing_buffer_changed: bool,
 }
+
+// the raw pointer in `PersistentBuffer` sets !Send and !Sync
+unsafe impl<T: bytemuck::Pod> Sync for PersistentBuffer<T> {}
 
 impl<T: bytemuck::Pod> PersistentBuffer<T> {
 	pub fn new(buffer_type: GLenum) -> Self {
@@ -168,5 +175,13 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for PersistentBuffer<T> {
 
 	fn clear_buffer_changed(&mut self) {
 		self.backing_buffer_changed = false;
+	}
+}
+
+impl<T: bytemuck::Pod> Drop for PersistentBuffer<T> {
+	fn drop(&mut self) {
+		unsafe {
+			gl::DeleteBuffers(1, &mut self.gl_buffer);
+		}
 	}
 }
