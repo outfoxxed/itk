@@ -14,6 +14,7 @@ pub struct VertexAttribute {
 	pub ty: GLenum,
 	pub count: usize,
 	pub ty_size: usize,
+	pub is_integer: bool,
 }
 
 pub struct Uploader<T: bytemuck::Pod> {
@@ -24,12 +25,42 @@ pub struct Uploader<T: bytemuck::Pod> {
 	vertex_attributes: Vec<VertexAttribute>,
 }
 
+pub trait GLtype: Sized {
+	fn size() -> usize {
+		std::mem::size_of::<Self>()
+	}
+
+	fn gl_type() -> GLenum;
+	fn is_integer() -> bool;
+}
+
+impl GLtype for f32 {
+	fn gl_type() -> GLenum {
+		gl::FLOAT
+	}
+
+	fn is_integer() -> bool {
+		false
+	}
+}
+
+impl GLtype for u16 {
+	fn gl_type() -> GLenum {
+		gl::UNSIGNED_SHORT
+	}
+
+	fn is_integer() -> bool {
+		true
+	}
+}
+
 impl VertexAttribute {
-	pub fn new<T>(count: usize, ty: GLenum) -> Self {
+	pub fn new<T: GLtype>(count: usize) -> Self {
 		VertexAttribute {
-			ty,
+			ty: T::gl_type(),
 			count,
-			ty_size: std::mem::size_of::<T>(),
+			ty_size: T::size(),
+			is_integer: T::is_integer()
 		}
 	}
 }
@@ -133,14 +164,24 @@ impl<T: bytemuck::Pod> Uploader<T> {
 		let mut offset = 0;
 
 		for (i, attribute) in vertex_attributes.iter().enumerate() {
-			gl::VertexAttribPointer(
-				i as u32,
-				attribute.count as GLsizei,
-				attribute.ty,
-				gl::FALSE,
-				stride,
-				offset as *const c_void,
-			);
+			if attribute.is_integer {
+				gl::VertexAttribIPointer(
+					i as u32,
+					attribute.count as GLsizei,
+					attribute.ty,
+					stride,
+					offset as *const c_void,
+				);
+			} else {
+				gl::VertexAttribPointer(
+					i as u32,
+					attribute.count as GLsizei,
+					attribute.ty,
+					gl::FALSE,
+					stride,
+					offset as *const c_void,
+				);
+			}
 
 			gl::EnableVertexAttribArray(i as u32);
 

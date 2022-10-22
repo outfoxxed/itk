@@ -6,12 +6,16 @@ edition = "2021"
 [[bin]]
 name = "buffer_triangles"
 
+[[bin]]
+name = "grouped_stencil"
+
 [dependencies]
 gl = "^0.14"
 glfw = "^0.45"
 bytemuck = { version = "^1.12", features = ["derive"] }
 log = "^0.4"
 env_logger = "^0.9"
+rand = "0.8.5"
 
 [dependencies.gl_painter]
 path = "../"

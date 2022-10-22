@@ -91,4 +91,9 @@ impl<'b, T: bytemuck::Pod> BufferWriter<'b, T> {
 	pub fn write(&mut self, offset: usize, data: &[MaybeUninit<T>]) {
 		unsafe { self.buffer.write(offset, data) };
 	}
+
+	#[inline]
+	pub fn resize(&mut self, size: usize) {
+		self.buffer.resize(size);
+	}
 }

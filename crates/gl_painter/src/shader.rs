@@ -18,7 +18,7 @@ pub struct Shader {
 }
 
 pub struct ShaderProgram {
-	program_object: GLuint,
+	pub program_object: GLuint,
 }
 
 impl ShaderType {

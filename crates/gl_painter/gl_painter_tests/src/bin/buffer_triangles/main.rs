@@ -20,7 +20,7 @@ fn main() {
 		#[rustfmt::skip]
 		let mut uploader = unsafe {
 			upload::Uploader::new(gl::TRIANGLES, vec![
-				upload::VertexAttribute::new::<GLfloat>(3, gl::FLOAT)
+				upload::VertexAttribute::new::<f32>(3)
 			])
 		};
 
