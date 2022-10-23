@@ -8,14 +8,10 @@ use std::ffi::c_void;
 
 use gl::types::{GLenum, GLsizei, GLuint};
 
-pub mod buffer;
+pub use self::attribute::VertexAttribute;
 
-pub struct VertexAttribute {
-	pub ty: GLenum,
-	pub count: usize,
-	pub ty_size: usize,
-	pub is_integer: bool,
-}
+pub mod attribute;
+pub mod buffer;
 
 pub struct Uploader<T: bytemuck::Pod> {
 	vao: GLuint,
@@ -23,46 +19,6 @@ pub struct Uploader<T: bytemuck::Pod> {
 	index_buffer: Box<dyn buffer::GpuBuffer<GLuint>>,
 	gl_type: GLenum,
 	vertex_attributes: Vec<VertexAttribute>,
-}
-
-pub trait GLtype: Sized {
-	fn size() -> usize {
-		std::mem::size_of::<Self>()
-	}
-
-	fn gl_type() -> GLenum;
-	fn is_integer() -> bool;
-}
-
-impl GLtype for f32 {
-	fn gl_type() -> GLenum {
-		gl::FLOAT
-	}
-
-	fn is_integer() -> bool {
-		false
-	}
-}
-
-impl GLtype for u16 {
-	fn gl_type() -> GLenum {
-		gl::UNSIGNED_SHORT
-	}
-
-	fn is_integer() -> bool {
-		true
-	}
-}
-
-impl VertexAttribute {
-	pub fn new<T: GLtype>(count: usize) -> Self {
-		VertexAttribute {
-			ty: T::gl_type(),
-			count,
-			ty_size: T::size(),
-			is_integer: T::is_integer(),
-		}
-	}
 }
 
 impl<T: bytemuck::Pod> Uploader<T> {

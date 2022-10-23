@@ -4,13 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/./
 
-use std::{
-	ffi::c_void,
-	marker::PhantomData,
-	mem::{self, MaybeUninit},
-	ops::Range,
-	sync::MutexGuard,
-};
+use std::{ffi::c_void, marker::PhantomData, mem, ops::Range, sync::MutexGuard};
 
 use gl::types::{GLenum, GLsizeiptr, GLuint};
 
