@@ -34,7 +34,7 @@ pub trait GpuBuffer<T: bytemuck::Pod> {
 	///
 	/// # SAFETY
 	/// * must have previously called `prepare_write`
-	unsafe fn write(&mut self, offset: usize, data: &[MaybeUninit<T>]);
+	unsafe fn write(&mut self, offset: usize, data: &[T]);
 	/// Begin flushing this buffer. Call `ready` to wait for completion.
 	///
 	/// # SAFETY
@@ -88,7 +88,7 @@ impl<'b, T: bytemuck::Pod> BufferWriter<'b, T> {
 	}
 
 	#[inline]
-	pub fn write(&mut self, offset: usize, data: &[MaybeUninit<T>]) {
+	pub fn write(&mut self, offset: usize, data: &[T]) {
 		unsafe { self.buffer.write(offset, data) };
 	}
 

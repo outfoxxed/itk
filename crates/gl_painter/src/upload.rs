@@ -60,7 +60,7 @@ impl VertexAttribute {
 			ty: T::gl_type(),
 			count,
 			ty_size: T::size(),
-			is_integer: T::is_integer()
+			is_integer: T::is_integer(),
 		}
 	}
 }

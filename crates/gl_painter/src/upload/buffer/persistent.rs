@@ -23,8 +23,8 @@ use super::GpuBuffer;
 /// on the same thread
 pub struct PersistentBuffer<T: bytemuck::Pod> {
 	buffer_type: GLenum,
-	buffer: Vec<MaybeUninit<T>>,
-	mapped_region: *mut MaybeUninit<T>,
+	buffer: Vec<T>,
+	mapped_region: *mut T,
 	gl_buffer: GLuint,
 	flush_region: Option<Range<usize>>,
 	gl_buffer_size: usize,
@@ -59,7 +59,7 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for PersistentBuffer<T> {
 		self.sync_flush();
 	}
 
-	unsafe fn write(&mut self, offset: usize, data: &[MaybeUninit<T>]) {
+	unsafe fn write(&mut self, offset: usize, data: &[T]) {
 		if data.len() == 0 {
 			return
 		}
@@ -73,10 +73,8 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for PersistentBuffer<T> {
 				&& self.flush_region.as_ref().map(|r| r.end).unwrap_or(0) <= range.end
 				&& self.gl_buffer_size >= range.end
 			{
-				std::slice::from_raw_parts_mut::<MaybeUninit<T>>(
-					self.mapped_region,
-					self.gl_buffer_size,
-				)[range.clone()]
+				std::slice::from_raw_parts_mut::<T>(self.mapped_region, self.gl_buffer_size)
+					[range.clone()]
 				.clone_from_slice(data);
 			}
 		} else {
@@ -107,10 +105,7 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for PersistentBuffer<T> {
 			gl::BufferStorage(
 				self.buffer_type,
 				buffer_len as GLsizeiptr,
-				bytemuck::cast_slice::<T, u8>(mem::transmute::<&[MaybeUninit<T>], &[T]>(
-					&self.buffer,
-				))
-				.as_ptr() as *const c_void,
+				bytemuck::cast_slice::<T, u8>(&self.buffer).as_ptr() as *const c_void,
 				gl::DYNAMIC_STORAGE_BIT | gl::MAP_PERSISTENT_BIT | gl::MAP_WRITE_BIT,
 			);
 
@@ -119,7 +114,7 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for PersistentBuffer<T> {
 				0,
 				buffer_len as GLsizeiptr,
 				gl::MAP_PERSISTENT_BIT | gl::MAP_WRITE_BIT | gl::MAP_FLUSH_EXPLICIT_BIT,
-			) as *mut MaybeUninit<T>;
+			) as *mut T;
 
 			self.gl_buffer_size = self.buffer.len();
 			self.backing_buffer_changed = true;
@@ -158,7 +153,7 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for PersistentBuffer<T> {
 	}
 
 	fn resize(&mut self, size: usize) {
-		self.buffer.resize(size, MaybeUninit::uninit());
+		self.buffer.resize(size, T::zeroed());
 	}
 
 	fn len(&self) -> usize {

@@ -50,22 +50,17 @@ fn main() {
 
 						let (mut vbuf, mut ibuf) = uploader.write();
 
-						vbuf.write(
-							i * 3,
-							std::mem::transmute::<&[[f32; 3]], &[MaybeUninit<[f32; 3]>]>(&[
-								[h - 0.1, v, 0.0],
-								[h + 0.1, v, 0.0],
-								[h, v + 0.1, 0.0],
-							]),
-						);
-						ibuf.write(
-							i * 3,
-							std::mem::transmute::<&[u32], &[MaybeUninit<u32>]>(&[
-								(i * 3 + 0) as u32,
-								(i * 3 + 1) as u32,
-								(i * 3 + 2) as u32,
-							]),
-						);
+						#[rustfmt::skip]
+						vbuf.write(i * 3, &[
+							[h - 0.1, v, 0.0],
+							[h + 0.1, v, 0.0],
+							[h, v + 0.1, 0.0],
+						]);
+						ibuf.write(i * 3, &[
+							(i * 3 + 0) as u32,
+							(i * 3 + 1) as u32,
+							(i * 3 + 2) as u32,
+						]);
 					}
 
 					uploader.begin_flush();

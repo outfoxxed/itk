@@ -6,8 +6,10 @@
 
 use std::{
 	ffi::c_void,
+	marker::PhantomData,
 	mem::{self, MaybeUninit},
-	ops::Range, marker::PhantomData, sync::MutexGuard,
+	ops::Range,
+	sync::MutexGuard,
 };
 
 use gl::types::{GLenum, GLsizeiptr, GLuint};
@@ -20,7 +22,7 @@ use super::GpuBuffer;
 /// on the same thread
 pub struct CompatBuffer<T: bytemuck::Pod> {
 	buffer_type: GLenum,
-	buffer: Vec<MaybeUninit<T>>,
+	buffer: Vec<T>,
 	gl_buffer: GLuint,
 	flush_region: Option<Range<usize>>,
 	gl_buffer_size: usize,
@@ -49,7 +51,7 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for CompatBuffer<T> {
 
 	unsafe fn prepare_write(&mut self) {}
 
-	unsafe fn write(&mut self, offset: usize, data: &[MaybeUninit<T>]) {
+	unsafe fn write(&mut self, offset: usize, data: &[T]) {
 		if data.len() == 0 {
 			return
 		}
@@ -86,10 +88,7 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for CompatBuffer<T> {
 			gl::BufferData(
 				self.buffer_type,
 				buffer_len,
-				bytemuck::cast_slice::<T, u8>(mem::transmute::<&[MaybeUninit<T>], &[T]>(
-					&self.buffer,
-				))
-				.as_ptr() as *const c_void,
+				bytemuck::cast_slice::<T, u8>(&self.buffer).as_ptr() as *const c_void,
 				gl::DYNAMIC_DRAW,
 			);
 
@@ -104,10 +103,7 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for CompatBuffer<T> {
 				self.buffer_type,
 				(range.start * mem::size_of::<T>()) as GLsizeiptr,
 				(range.end * mem::size_of::<T>()) as GLsizeiptr,
-				bytemuck::cast_slice::<T, u8>(mem::transmute::<&[MaybeUninit<T>], &[T]>(
-					&self.buffer,
-				))
-				.as_ptr() as *const c_void,
+				bytemuck::cast_slice::<T, u8>(&self.buffer).as_ptr() as *const c_void,
 			);
 		}
 
@@ -117,7 +113,7 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for CompatBuffer<T> {
 	unsafe fn sync_flush(&mut self) {}
 
 	fn resize(&mut self, size: usize) {
-		self.buffer.resize(size, MaybeUninit::uninit());
+		self.buffer.resize(size, T::zeroed());
 	}
 
 	fn len(&self) -> usize {

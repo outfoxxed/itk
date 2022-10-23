@@ -1,6 +1,9 @@
-use std::{mem::MaybeUninit, ffi::{CStr, CString}};
+use std::{
+	ffi::{CStr, CString},
+	mem::MaybeUninit,
+};
 
-use gl::types::{GLfloat, GLenum};
+use gl::types::{GLenum, GLfloat};
 use gl_painter::{
 	shader::{Shader, ShaderProgram, ShaderType},
 	upload,
@@ -12,12 +15,14 @@ fn main() {
 		let circle_shader = ShaderProgram::link(
 			&Shader::compile(ShaderType::Vertex, include_str!("circle.vert.glsl")).unwrap(),
 			&Shader::compile(ShaderType::Fragment, include_str!("circle.frag.glsl")).unwrap(),
-		).unwrap();
+		)
+		.unwrap();
 
 		let triangle_shader = ShaderProgram::link(
 			&Shader::compile(ShaderType::Vertex, include_str!("triangle.vert.glsl")).unwrap(),
 			&Shader::compile(ShaderType::Fragment, include_str!("triangle.frag.glsl")).unwrap(),
-		).unwrap();
+		)
+		.unwrap();
 
 		let mut circle_uploader = unsafe {
 			upload::Uploader::<CircleVertex>::new(gl::TRIANGLES, vec![
@@ -42,36 +47,45 @@ fn main() {
 			color: [f32; 3],
 		}
 
-		let stencil_groups = (1..4).into_iter().map(|i| StencilGroup {
-			stencil: i,
-			color: [
-				rand::thread_rng().gen_range(0.0..1.0),
-				rand::thread_rng().gen_range(0.0..1.0),
-				rand::thread_rng().gen_range(0.0..1.0),
-			],
-		}).collect::<Vec<_>>();
-
-		let mut circles = stencil_groups.iter().map(|group| MovingShape {
-			shape: Circle {
-				origin: [
-					rand::thread_rng().gen_range(-0.5..0.5),
-					rand::thread_rng().gen_range(-0.5..0.5),
+		let stencil_groups = (1..4)
+			.into_iter()
+			.map(|i| StencilGroup {
+				stencil: i,
+				color: [
+					rand::thread_rng().gen_range(0.0..1.0),
+					rand::thread_rng().gen_range(0.0..1.0),
+					rand::thread_rng().gen_range(0.0..1.0),
 				],
-				radius: rand::thread_rng().gen_range(0.2..0.4),
-				color: group.color,
-				stencil: group.stencil,
-			},
-			movement: [
-				rand::thread_rng().gen_range(-0.2..0.2),
-				rand::thread_rng().gen_range(-0.2..0.2),
-			],
-			bounce: true,
-			offscreen: false,
-		}).collect::<Vec<_>>();
+			})
+			.collect::<Vec<_>>();
+
+		let mut circles = stencil_groups
+			.iter()
+			.map(|group| MovingShape {
+				shape: Circle {
+					origin: [
+						rand::thread_rng().gen_range(-0.5..0.5),
+						rand::thread_rng().gen_range(-0.5..0.5),
+					],
+					radius: rand::thread_rng().gen_range(0.2..0.4),
+					color: group.color,
+					stencil: group.stencil,
+				},
+				movement: [
+					rand::thread_rng().gen_range(-0.2..0.2),
+					rand::thread_rng().gen_range(-0.2..0.2),
+				],
+				bounce: true,
+				offscreen: false,
+			})
+			.collect::<Vec<_>>();
 
 		let mut triangles = Vec::<MovingShape<Triangle>>::new();
 
-		unsafe fn upload_circles(uploader: &mut upload::Uploader::<CircleVertex>, circles: &[MovingShape<Circle>]) {
+		unsafe fn upload_circles(
+			uploader: &mut upload::Uploader<CircleVertex>,
+			circles: &[MovingShape<Circle>],
+		) {
 			uploader.prepare_write();
 			let (mut vbuf, mut ibuf) = uploader.write();
 
@@ -83,26 +97,17 @@ fn main() {
 					*ci = *ci + i as u32 * 4;
 				}
 
-
-				vbuf.write(
-					i * 4,
-					std::mem::transmute::<&[CircleVertex], &[MaybeUninit<CircleVertex>]>(
-						&circle_v
-					),
-				);
-
-				ibuf.write(
-					i * 6,
-					std::mem::transmute::<&[u32], &[MaybeUninit<u32>]>(
-						&circle_i
-					),
-				);
+				vbuf.write(i * 4, &circle_v);
+				ibuf.write(i * 6, &circle_i);
 			}
 
 			uploader.begin_flush();
 		}
 
-		unsafe fn upload_triangles(uploader: &mut upload::Uploader::<TriangleVertex>, triangles: &[MovingShape<Triangle>]) {
+		unsafe fn upload_triangles(
+			uploader: &mut upload::Uploader<TriangleVertex>,
+			triangles: &[MovingShape<Triangle>],
+		) {
 			uploader.prepare_write();
 			let (mut vbuf, mut ibuf) = uploader.write();
 
@@ -114,19 +119,8 @@ fn main() {
 					*ti = *ti + i as u32 * 3;
 				}
 
-				vbuf.write(
-					i * 3,
-					std::mem::transmute::<&[TriangleVertex], &[MaybeUninit<TriangleVertex>]>(
-						&triangle_v
-					),
-				);
-
-				ibuf.write(
-					i * 3,
-					std::mem::transmute::<&[u32], &[MaybeUninit::<u32>]>(
-						&triangle_i
-					),
-				);
+				vbuf.write(i * 3, &triangle_v);
+				ibuf.write(i * 3, &triangle_i);
 			}
 
 			uploader.begin_flush();
@@ -137,7 +131,17 @@ fn main() {
 			gl::GenTextures(1, &mut texture);
 			gl::BindTexture(gl::TEXTURE_2D, texture);
 
-			gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGBA as i32, 1000, 1000, 0, gl::RGBA, gl::UNSIGNED_BYTE, std::ptr::null());
+			gl::TexImage2D(
+				gl::TEXTURE_2D,
+				0,
+				gl::RGBA as i32,
+				1000,
+				1000,
+				0,
+				gl::RGBA,
+				gl::UNSIGNED_BYTE,
+				std::ptr::null(),
+			);
 
 			gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
 			gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
@@ -150,20 +154,36 @@ fn main() {
 			gl::GenTextures(1, &mut texture);
 			gl::BindTexture(gl::TEXTURE_2D, texture);
 
-			gl::TexImage2D(gl::TEXTURE_2D, 0, gl::R16UI as i32, 1000, 1000, 0, gl::RED_INTEGER, gl::UNSIGNED_SHORT, std::ptr::null());
+			gl::TexImage2D(
+				gl::TEXTURE_2D,
+				0,
+				gl::R16UI as i32,
+				1000,
+				1000,
+				0,
+				gl::RED_INTEGER,
+				gl::UNSIGNED_SHORT,
+				std::ptr::null(),
+			);
 
 			gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
 			gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
 
 			texture
 		};
-		
+
 		let framebuffer = unsafe {
 			let mut fbo = 0;
 			gl::GenFramebuffers(1, &mut fbo);
 			gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
 
-			gl::FramebufferTexture2D(gl::DRAW_FRAMEBUFFER, gl::COLOR_ATTACHMENT0, gl::TEXTURE_2D, target_texture, 0);
+			gl::FramebufferTexture2D(
+				gl::DRAW_FRAMEBUFFER,
+				gl::COLOR_ATTACHMENT0,
+				gl::TEXTURE_2D,
+				target_texture,
+				0,
+			);
 			gl::FramebufferTexture(gl::DRAW_FRAMEBUFFER, gl::COLOR_ATTACHMENT1, stencil_texture, 0);
 
 			fbo
@@ -184,7 +204,8 @@ fn main() {
 			gl::Enable(gl::BLEND);
 			gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
 
-			gl::DrawBuffers(2, &[gl::COLOR_ATTACHMENT0, gl::COLOR_ATTACHMENT1] as *const [u32] as *const GLenum);
+			gl::DrawBuffers(2, &[gl::COLOR_ATTACHMENT0, gl::COLOR_ATTACHMENT1] as *const [u32]
+				as *const GLenum);
 			gl::ClearBufferuiv(gl::COLOR, 1, &0);
 			circle_shader.bind();
 			circle_uploader.upload();
@@ -194,14 +215,28 @@ fn main() {
 			gl::BindTexture(gl::TEXTURE_2D, stencil_texture);
 			triangle_shader.bind();
 			let stencil_str = CString::new("stencil").unwrap();
-			gl::Uniform1i(gl::GetUniformLocation(triangle_shader.program_object, stencil_str.as_ptr()), 1);
+			gl::Uniform1i(
+				gl::GetUniformLocation(triangle_shader.program_object, stencil_str.as_ptr()),
+				1,
+			);
 			triangle_uploader.upload();
-			
+
 			gl::BindFramebuffer(gl::READ_FRAMEBUFFER, framebuffer);
 			gl::BindFramebuffer(gl::DRAW_FRAMEBUFFER, 0);
 			gl::ClearColor(0.0, 0.0, 0.0, 1.0);
 			gl::Clear(gl::COLOR_BUFFER_BIT);
-			gl::BlitFramebuffer(0, 0, 1000, 1000, 0, 0, 1000, 1000, gl::COLOR_BUFFER_BIT, gl::NEAREST);
+			gl::BlitFramebuffer(
+				0,
+				0,
+				1000,
+				1000,
+				0,
+				0,
+				1000,
+				1000,
+				gl::COLOR_BUFFER_BIT,
+				gl::NEAREST,
+			);
 
 			upload_circles(&mut circle_uploader, &circles);
 			upload_triangles(&mut triangle_uploader, &triangles);
@@ -217,15 +252,16 @@ fn main() {
 
 			let triangle_delta = now.duration_since(last_triangle);
 			let triangle_count = triangle_delta.as_millis() / 20;
-			
+
 			if triangle_count > 0 {
 				for _ in 0..triangle_count {
 					let size = rand::thread_rng().gen_range(0.05..0.2);
-					let group = &stencil_groups[rand::thread_rng().gen_range(0..stencil_groups.len())];
+					let group =
+						&stencil_groups[rand::thread_rng().gen_range(0..stencil_groups.len())];
 					triangles.push(MovingShape {
 						shape: Triangle {
 							position: [
-								rand::thread_rng().gen_range(-1.0 + size .. (1.0 - size * 2.0)),
+								rand::thread_rng().gen_range(-1.0 + size..(1.0 - size * 2.0)),
 								-1.0 - size,
 							],
 							size,
@@ -283,6 +319,7 @@ struct Triangle {
 }
 
 impl Circle {
+	#[rustfmt::skip]
 	fn vertices(&self) -> ([CircleVertex; 4], [u32; 6]) {
 		let mk_vertex = |x, y| CircleVertex {
 			position: [
@@ -307,6 +344,7 @@ impl Circle {
 }
 
 impl Triangle {
+	#[rustfmt::skip]
 	fn vertices(&self) -> ([TriangleVertex; 3], [u32; 3]) {
 		(
 			[
@@ -345,10 +383,11 @@ impl Shape for Circle {
 		&mut self.origin
 	}
 
+	#[rustfmt::skip]
 	fn shape(&self) -> [[f32; 2]; 2] {
 		[
 			[-self.radius, -self.radius],
-			[self.radius, self.radius]
+			[self.radius, self.radius],
 		]
 	}
 }
@@ -358,6 +397,7 @@ impl Shape for Triangle {
 		&mut self.position
 	}
 
+	#[rustfmt::skip]
 	fn shape(&self) -> [[f32; 2]; 2] {
 		[
 			[-self.size, -self.size],
@@ -378,10 +418,7 @@ impl<S: Shape> MovingShape<S> {
 		let m = delta.as_secs_f32() * 10.0;
 
 		let pos = *self.shape.position();
-		let mut newpos = [
-			pos[0] + self.movement[0] * m,
-			pos[1] + self.movement[1] * m,
-		];
+		let mut newpos = [pos[0] + self.movement[0] * m, pos[1] + self.movement[1] * m];
 
 		let bounds = self.shape.shape();
 		if self.bounce {
