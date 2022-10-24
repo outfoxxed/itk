@@ -50,6 +50,7 @@ macro_rules! gl_types {
 }
 
 gl_types! {
+	f64(gl::DOUBLE, int: false);
 	f32(gl::FLOAT, int: false);
 
 	u32(gl::UNSIGNED_INT, int: true);
