@@ -25,6 +25,7 @@ pub struct PersistentBuffer<T: bytemuck::Pod> {
 	gl_buffer_size: usize,
 	flush_fence: GLsync,
 	backing_buffer_changed: bool,
+	size_limit: usize,
 }
 
 // the raw pointer in `PersistentBuffer` sets !Send and !Sync
@@ -41,6 +42,7 @@ impl<T: bytemuck::Pod> PersistentBuffer<T> {
 			gl_buffer_size: 0,
 			flush_fence: ptr::null(),
 			backing_buffer_changed: false,
+			size_limit: 0,
 		}
 	}
 }
@@ -63,6 +65,7 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for PersistentBuffer<T> {
 
 		if let Some(slice) = self.buffer.get_mut(range.clone()) {
 			slice.clone_from_slice(data);
+			self.size_limit = usize::max(self.size_limit, range.end);
 
 			if !self.mapped_region.is_null()
 				&& self.flush_region.as_ref().map(|r| r.end).unwrap_or(0) <= range.end
@@ -148,11 +151,14 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for PersistentBuffer<T> {
 	}
 
 	fn resize(&mut self, size: usize) {
-		self.buffer.resize(size, T::zeroed());
+		if size > self.buffer.len() {
+			self.buffer.resize(size, T::zeroed());
+		}
+		self.size_limit = size;
 	}
 
 	fn len(&self) -> usize {
-		self.buffer.len()
+		self.size_limit
 	}
 
 	fn has_backing_buffer(&self) -> bool {

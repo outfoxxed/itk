@@ -14,36 +14,27 @@ pub struct VertexAttribute {
 }
 
 impl VertexAttribute {
-	pub fn new<T: GLtype>(count: usize) -> Self {
+	pub const fn new<T: GLtype>(count: usize) -> Self {
 		VertexAttribute {
-			ty: T::gl_type(),
+			ty: T::GL_TYPE,
 			count,
-			ty_size: T::size(),
-			is_integer: T::is_integer(),
+			ty_size: std::mem::size_of::<T>(),
+			is_integer: T::IS_INTEGER,
 		}
 	}
 }
 
 pub trait GLtype: Sized {
-	fn size() -> usize {
-		std::mem::size_of::<Self>()
-	}
-
-	fn gl_type() -> GLenum;
-	fn is_integer() -> bool;
+	const GL_TYPE: GLenum;
+	const IS_INTEGER: bool;
 }
 
 macro_rules! gl_types {
 	($($type:ident($gltype:expr, int: $int:literal);)*) => {
 		$(
 			impl GLtype for $type {
-				fn gl_type() -> GLenum {
-					$gltype
-				}
-
-				fn is_integer() -> bool {
-					$int
-				}
+				const GL_TYPE: GLenum = $gltype;
+				const IS_INTEGER: bool = $int;
 			}
 		)*
 	}

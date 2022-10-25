@@ -25,7 +25,7 @@ fn main() {
 		.unwrap();
 
 		let mut circle_uploader = unsafe {
-			upload::Uploader::<CircleVertex>::new(gl::TRIANGLES, vec![
+			upload::UploaderImpl::<CircleVertex>::new(gl::TRIANGLES, vec![
 				upload::VertexAttribute::new::<f32>(2),
 				upload::VertexAttribute::new::<f32>(2),
 				upload::VertexAttribute::new::<f32>(1),
@@ -35,7 +35,7 @@ fn main() {
 		};
 
 		let mut triangle_uploader = unsafe {
-			upload::Uploader::<TriangleVertex>::new(gl::TRIANGLES, vec![
+			upload::UploaderImpl::<TriangleVertex>::new(gl::TRIANGLES, vec![
 				upload::VertexAttribute::new::<f32>(2),
 				upload::VertexAttribute::new::<f32>(3),
 				upload::VertexAttribute::new::<u16>(1),
@@ -83,7 +83,7 @@ fn main() {
 		let mut triangles = Vec::<MovingShape<Triangle>>::new();
 
 		unsafe fn upload_circles(
-			uploader: &mut upload::Uploader<CircleVertex>,
+			uploader: &mut upload::UploaderImpl<CircleVertex>,
 			circles: &[MovingShape<Circle>],
 		) {
 			uploader.prepare_write();
@@ -105,7 +105,7 @@ fn main() {
 		}
 
 		unsafe fn upload_triangles(
-			uploader: &mut upload::Uploader<TriangleVertex>,
+			uploader: &mut upload::UploaderImpl<TriangleVertex>,
 			triangles: &[MovingShape<Triangle>],
 		) {
 			uploader.prepare_write();

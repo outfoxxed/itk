@@ -4,6 +4,6 @@ version = "0.0.0"
 edition = "2021"
 
 [dependencies]
-bytemuck = "^1.12"
+bytemuck = { version = "^1.12", features = ["derive"] }
 gl = "^0.14"
 thiserror = "^1.0"
