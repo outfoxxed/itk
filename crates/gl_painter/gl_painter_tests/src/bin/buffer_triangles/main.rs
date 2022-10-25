@@ -8,7 +8,7 @@ use gl_painter::{
 
 fn main() {
 	gl_painter_tests::view_window(true, || {
-		let mut uploader = unsafe { upload::compat::CompatUploader::new() };
+		let mut uploader = unsafe { upload::ssbo::SsboUploader::new() };
 
 		let mut anim_t = 0.0;
 

@@ -4,7 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/./
 
-use gl::types::GLenum;
+use gl::types::{GLenum, GLuint};
 
 pub mod compat;
 pub mod persistent;
@@ -62,6 +62,7 @@ pub trait GpuBuffer<T: bytemuck::Pod> {
 	fn backing_buffer_changed(&self) -> bool;
 	/// Clear buffer changed flag
 	fn clear_buffer_changed(&mut self);
+	fn backing_buffer(&self) -> GLuint;
 }
 
 /// Create a new GpuBuffer

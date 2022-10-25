@@ -14,6 +14,7 @@ use crate::drawable::Drawable;
 pub mod attribute;
 pub mod buffer;
 pub mod compat;
+pub mod ssbo;
 
 pub trait Uploader<D: Drawable> {
 	/// # SAFETY

@@ -125,6 +125,10 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for CompatBuffer<T> {
 	fn clear_buffer_changed(&mut self) {
 		self.backing_buffer_changed = false;
 	}
+
+	fn backing_buffer(&self) -> GLuint {
+		self.gl_buffer
+	}
 }
 
 impl<T: bytemuck::Pod> Drop for CompatBuffer<T> {

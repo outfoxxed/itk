@@ -1,4 +1,4 @@
-#version 330 core
+#version 430 core
 
 layout(location = 0) in vec2 v_pos;
 layout(location = 1) in uint s_index;
