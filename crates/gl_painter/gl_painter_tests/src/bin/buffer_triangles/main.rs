@@ -30,7 +30,7 @@ fn main() {
 						let h = (anim_t - (i as f32 * 0.15)) % 2.0 - 1.0;
 						let v = -0.8 + i as f32 * 0.15;
 
-						uploader.write(ColoredTriangle {
+						uploader.write(&ColoredTriangle {
 							points: [
 								[h - 0.1, v].into(),
 								[h + 0.1, v].into(),

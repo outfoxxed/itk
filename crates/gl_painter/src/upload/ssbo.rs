@@ -110,7 +110,7 @@ impl<D: Drawable> Uploader<D> for SsboUploader<D> {
 		self.storage_buffer.prepare_write();
 	}
 
-	unsafe fn write(&mut self, drawable: D) {
+	unsafe fn write(&mut self, drawable: &D) {
 		let drawable_data = drawable.drawable_data().into_ssbo();
 
 		// FIXME: excess allocation, move this somewhere else

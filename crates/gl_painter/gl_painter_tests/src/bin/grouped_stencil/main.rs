@@ -65,7 +65,7 @@ fn main() {
 		) {
 			uploader.prepare_write();
 			uploader.clear();
-			circles.iter().for_each(|c| uploader.write(c.shape.clone()));
+			circles.iter().for_each(|c| uploader.write(&c.shape));
 			uploader.begin_flush();
 		}
 
@@ -75,7 +75,7 @@ fn main() {
 		) {
 			uploader.prepare_write();
 			uploader.clear();
-			triangles.iter().for_each(|t| uploader.write(t.shape.clone()));
+			triangles.iter().for_each(|t| uploader.write(&t.shape));
 			uploader.begin_flush();
 		}
 

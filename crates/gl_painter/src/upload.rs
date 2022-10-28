@@ -22,7 +22,7 @@ pub trait Uploader<D: Drawable> {
 	unsafe fn prepare_write(&mut self);
 	/// # SAFETY
 	/// * must call prepare_write before calling write
-	unsafe fn write(&mut self, drawable: D);
+	unsafe fn write(&mut self, drawable: &D);
 	/// # SAFETY
 	/// * must be called from GL thread
 	unsafe fn begin_flush(&mut self);

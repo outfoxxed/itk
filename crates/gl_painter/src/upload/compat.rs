@@ -113,7 +113,7 @@ impl<D: Drawable> Uploader<D> for CompatUploader<D> {
 		self.index_buffer.prepare_write();
 	}
 
-	unsafe fn write(&mut self, drawable: D) {
+	unsafe fn write(&mut self, drawable: &D) {
 		let drawable_data = drawable.drawable_data().into_compat();
 
 		// FIXME: excess allocation, move this somewhere else
