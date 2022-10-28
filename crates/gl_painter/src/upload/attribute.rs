@@ -6,21 +6,28 @@
 
 use gl::types::GLenum;
 
+#[derive(Debug)]
 pub struct VertexAttribute {
 	pub ty: GLenum,
 	pub count: usize,
 	pub ty_size: usize,
+	pub padding: usize,
 	pub is_integer: bool,
 }
 
 impl VertexAttribute {
-	pub const fn new<T: GLtype>(count: usize) -> Self {
+	pub const fn new_padded<T: GLtype>(padding: usize, count: usize) -> Self {
 		VertexAttribute {
 			ty: T::GL_TYPE,
 			count,
 			ty_size: std::mem::size_of::<T>(),
+			padding,
 			is_integer: T::IS_INTEGER,
 		}
+	}
+
+	pub const fn new<T: GLtype>(count: usize) -> Self {
+		Self::new_padded::<T>(0, count)
 	}
 }
 

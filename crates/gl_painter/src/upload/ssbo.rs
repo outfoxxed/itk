@@ -1,3 +1,9 @@
+// Copyright (C) 2022 the ITK authors
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/./
+
 use std::ffi::c_void;
 
 use gl::types::{GLsizei, GLuint};
@@ -8,16 +14,16 @@ use super::{
 	Uploader,
 };
 use crate::{
-	drawable::{Drawable, VertexPassable},
+	drawable::{Drawable, DrawableData, VertexPassable},
 	shader::ShaderProgram,
 	upload::VertexAttribute,
 };
 
 pub struct SsboUploader<D: Drawable> {
 	vao: GLuint,
-	vertex_buffer: Box<dyn GpuBuffer<SsboVertex<D::Vertex>>>,
+	vertex_buffer: Box<dyn GpuBuffer<SsboVertex<<D::Vertex as DrawableData>::Compat>>>,
 	index_buffer: Box<dyn GpuBuffer<u32>>,
-	storage_buffer: Box<dyn GpuBuffer<D::DrawableData>>,
+	storage_buffer: Box<dyn GpuBuffer<<D::Drawable as DrawableData>::Ssbo>>,
 	shader: ShaderProgram,
 }
 
@@ -42,9 +48,13 @@ impl<D: Drawable> SsboUploader<D> {
 	pub unsafe fn new() -> Self {
 		Self {
 			vao: 0,
-			vertex_buffer: buffer::new::<SsboVertex<D::Vertex>>(gl::ARRAY_BUFFER),
+			vertex_buffer: buffer::new::<SsboVertex<<D::Vertex as DrawableData>::Compat>>(
+				gl::ARRAY_BUFFER,
+			),
 			index_buffer: buffer::new::<u32>(gl::ELEMENT_ARRAY_BUFFER),
-			storage_buffer: buffer::new::<D::DrawableData>(gl::SHADER_STORAGE_BUFFER),
+			storage_buffer: buffer::new::<<D::Drawable as DrawableData>::Ssbo>(
+				gl::SHADER_STORAGE_BUFFER,
+			),
 			shader: D::SHADER_SOURCE.create_program(true),
 		}
 	}
@@ -53,15 +63,20 @@ impl<D: Drawable> SsboUploader<D> {
 	/// * VAO, VBO and EBO must be bound
 	unsafe fn set_vertex_attributes() {
 		const SSBO_ATTRIBUTE: &[VertexAttribute] = &[VertexAttribute::new::<u32>(1)];
-		let stride = D::Vertex::VERTEX_ATTRIBUTES
+		let stride = <D::Vertex as DrawableData>::Compat::VERTEX_ATTRIBUTES
 			.iter()
 			.chain(SSBO_ATTRIBUTE)
-			.map(|a| a.count * a.ty_size)
+			.map(|a| a.padding + a.count * a.ty_size)
 			.sum::<usize>() as GLsizei;
 
 		let mut offset = 0;
-		for (i, attribute) in D::Vertex::VERTEX_ATTRIBUTES.iter().chain(SSBO_ATTRIBUTE).enumerate()
+		for (i, attribute) in <D::Vertex as DrawableData>::Compat::VERTEX_ATTRIBUTES
+			.iter()
+			.chain(SSBO_ATTRIBUTE)
+			.enumerate()
 		{
+			offset += attribute.padding;
+
 			if attribute.is_integer {
 				gl::VertexAttribIPointer(
 					i as u32,
@@ -96,7 +111,7 @@ impl<D: Drawable> Uploader<D> for SsboUploader<D> {
 	}
 
 	unsafe fn write(&mut self, drawable: D) {
-		let drawable_data = drawable.drawable_data();
+		let drawable_data = drawable.drawable_data().into_ssbo();
 
 		// FIXME: excess allocation, move this somewhere else
 		// and/or make buffers accept iterators
@@ -108,7 +123,7 @@ impl<D: Drawable> Uploader<D> for SsboUploader<D> {
 		let combined_vertex_data = vertex_data
 			.into_iter()
 			.map(|vertex| SsboVertex {
-				vertex,
+				vertex: vertex.into_compat(),
 				ssbo_index: self.storage_buffer.len() as u32,
 			})
 			.collect::<Vec<_>>();
@@ -147,6 +162,10 @@ impl<D: Drawable> Uploader<D> for SsboUploader<D> {
 		}
 		gl::BindVertexArray(self.vao);
 
+		self.vertex_buffer.bind();
+		self.index_buffer.bind();
+		self.storage_buffer.bind();
+
 		if no_vbo
 			|| self.vertex_buffer.backing_buffer_changed()
 			|| self.index_buffer.backing_buffer_changed()
@@ -157,10 +176,6 @@ impl<D: Drawable> Uploader<D> for SsboUploader<D> {
 			self.index_buffer.clear_buffer_changed();
 			self.storage_buffer.backing_buffer_changed();
 		}
-
-		self.vertex_buffer.bind();
-		self.index_buffer.bind();
-		self.storage_buffer.bind();
 	}
 
 	unsafe fn upload(&mut self) {
@@ -185,5 +200,9 @@ impl<D: Drawable> Uploader<D> for SsboUploader<D> {
 		self.vertex_buffer.resize(0);
 		self.index_buffer.resize(0);
 		self.storage_buffer.resize(0);
+	}
+
+	fn shader_program(&self) -> &ShaderProgram {
+		&self.shader
 	}
 }

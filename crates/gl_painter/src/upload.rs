@@ -9,7 +9,7 @@ use std::ffi::c_void;
 use gl::types::{GLenum, GLsizei, GLuint};
 
 pub use self::attribute::VertexAttribute;
-use crate::drawable::Drawable;
+use crate::{drawable::Drawable, shader::ShaderProgram};
 
 pub mod attribute;
 pub mod buffer;
@@ -45,6 +45,7 @@ pub trait Uploader<D: Drawable> {
 	unsafe fn finish_use(&mut self);
 	/// Clear buffers
 	unsafe fn clear(&mut self);
+	fn shader_program(&self) -> &ShaderProgram;
 }
 
 pub struct UploaderImpl<T: bytemuck::Pod> {

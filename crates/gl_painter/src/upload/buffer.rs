@@ -13,7 +13,7 @@ pub mod persistent;
 ///
 /// # NOTES
 /// `T`'s `drop` method will never be called.
-pub trait GpuBuffer<T: bytemuck::Pod> {
+pub trait GpuBuffer<T: bytemuck::AnyBitPattern> {
 	/// Bind this buffer
 	///
 	/// if this buffer has no backing buffer, the 0 buffer
@@ -68,7 +68,7 @@ pub trait GpuBuffer<T: bytemuck::Pod> {
 /// Create a new GpuBuffer
 ///
 /// does NOT bind new buffer
-pub fn new<T: bytemuck::Pod>(buffer_type: GLenum) -> Box<dyn GpuBuffer<T>> {
+pub fn new<T: bytemuck::AnyBitPattern>(buffer_type: GLenum) -> Box<dyn GpuBuffer<T>> {
 	match crate::check_gl_extensions().arb_buffer_storage {
 		true => Box::new(persistent::PersistentBuffer::new(buffer_type)),
 		false => Box::new(compat::CompatBuffer::new(buffer_type)),

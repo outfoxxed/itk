@@ -14,7 +14,7 @@ use super::GpuBuffer;
 ///
 /// !Send to ensure the backing GL buffer is deleted
 /// on the same thread
-pub struct CompatBuffer<T: bytemuck::Pod> {
+pub struct CompatBuffer<T: bytemuck::AnyBitPattern> {
 	buffer_type: GLenum,
 	buffer: Vec<T>,
 	gl_buffer: GLuint,
@@ -24,7 +24,7 @@ pub struct CompatBuffer<T: bytemuck::Pod> {
 	_unsend: PhantomData<MutexGuard<'static, ()>>,
 }
 
-impl<T: bytemuck::Pod> CompatBuffer<T> {
+impl<T: bytemuck::AnyBitPattern> CompatBuffer<T> {
 	pub fn new(buffer_type: GLenum) -> Self {
 		Self {
 			buffer_type,
@@ -38,7 +38,7 @@ impl<T: bytemuck::Pod> CompatBuffer<T> {
 	}
 }
 
-impl<T: bytemuck::Pod> GpuBuffer<T> for CompatBuffer<T> {
+impl<T: bytemuck::AnyBitPattern> GpuBuffer<T> for CompatBuffer<T> {
 	unsafe fn bind(&self) {
 		gl::BindBuffer(self.buffer_type, self.gl_buffer);
 	}
@@ -82,7 +82,8 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for CompatBuffer<T> {
 			gl::BufferData(
 				self.buffer_type,
 				buffer_len,
-				bytemuck::cast_slice::<T, u8>(&self.buffer).as_ptr() as *const c_void,
+				self.buffer[..].as_ptr() as *const _ as *const c_void,
+				//bytemuck::cast_slice::<T, u8>(&self.buffer).as_ptr() as *const c_void,
 				gl::DYNAMIC_DRAW,
 			);
 
@@ -97,7 +98,8 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for CompatBuffer<T> {
 				self.buffer_type,
 				(range.start * mem::size_of::<T>()) as GLsizeiptr,
 				(range.end * mem::size_of::<T>()) as GLsizeiptr,
-				bytemuck::cast_slice::<T, u8>(&self.buffer).as_ptr() as *const c_void,
+				self.buffer[..].as_ptr() as *const _ as *const c_void,
+				//bytemuck::cast_slice::<T, u8>(&self.buffer).as_ptr() as *const c_void,
 			);
 		}
 
@@ -131,7 +133,7 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for CompatBuffer<T> {
 	}
 }
 
-impl<T: bytemuck::Pod> Drop for CompatBuffer<T> {
+impl<T: bytemuck::AnyBitPattern> Drop for CompatBuffer<T> {
 	fn drop(&mut self) {
 		unsafe {
 			gl::DeleteBuffers(1, &mut self.gl_buffer);

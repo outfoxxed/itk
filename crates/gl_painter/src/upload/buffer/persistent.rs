@@ -16,7 +16,7 @@ use super::GpuBuffer;
 ///
 /// !Send to ensure the backing GL buffer is deleted
 /// on the same thread
-pub struct PersistentBuffer<T: bytemuck::Pod> {
+pub struct PersistentBuffer<T: bytemuck::AnyBitPattern> {
 	buffer_type: GLenum,
 	buffer: Vec<T>,
 	mapped_region: *mut T,
@@ -29,9 +29,9 @@ pub struct PersistentBuffer<T: bytemuck::Pod> {
 }
 
 // the raw pointer in `PersistentBuffer` sets !Send and !Sync
-unsafe impl<T: bytemuck::Pod> Sync for PersistentBuffer<T> {}
+unsafe impl<T: bytemuck::AnyBitPattern> Sync for PersistentBuffer<T> {}
 
-impl<T: bytemuck::Pod> PersistentBuffer<T> {
+impl<T: bytemuck::AnyBitPattern> PersistentBuffer<T> {
 	pub fn new(buffer_type: GLenum) -> Self {
 		Self {
 			buffer_type,
@@ -47,7 +47,7 @@ impl<T: bytemuck::Pod> PersistentBuffer<T> {
 	}
 }
 
-impl<T: bytemuck::Pod> GpuBuffer<T> for PersistentBuffer<T> {
+impl<T: bytemuck::AnyBitPattern> GpuBuffer<T> for PersistentBuffer<T> {
 	unsafe fn bind(&self) {
 		gl::BindBuffer(self.buffer_type, self.gl_buffer);
 	}
@@ -103,7 +103,8 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for PersistentBuffer<T> {
 			gl::BufferStorage(
 				self.buffer_type,
 				buffer_len as GLsizeiptr,
-				bytemuck::cast_slice::<T, u8>(&self.buffer).as_ptr() as *const c_void,
+				self.buffer[..].as_ptr() as *const _ as *const c_void,
+				//bytemuck::cast_slice::<T, u8>(&self.buffer).as_ptr() as *const c_void,
 				gl::DYNAMIC_STORAGE_BIT | gl::MAP_PERSISTENT_BIT | gl::MAP_WRITE_BIT,
 			);
 
@@ -178,7 +179,7 @@ impl<T: bytemuck::Pod> GpuBuffer<T> for PersistentBuffer<T> {
 	}
 }
 
-impl<T: bytemuck::Pod> Drop for PersistentBuffer<T> {
+impl<T: bytemuck::AnyBitPattern> Drop for PersistentBuffer<T> {
 	fn drop(&mut self) {
 		unsafe {
 			gl::DeleteBuffers(1, &mut self.gl_buffer);

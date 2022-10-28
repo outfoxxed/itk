@@ -1,10 +1,12 @@
+// Copyright (C) 2022 the ITK authors
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/./
+
 //! Test to make sure buffers are working as expected
 
-use gl_painter::{
-	drawable::{Color, ColoredTriangle, Point, Triangle},
-	upload,
-	upload::Uploader,
-};
+use gl_painter::{drawable::ColoredTriangle, upload, upload::Uploader};
 
 fn main() {
 	gl_painter_tests::view_window(true, || {
@@ -29,17 +31,12 @@ fn main() {
 						let v = -0.8 + i as f32 * 0.15;
 
 						uploader.write(ColoredTriangle {
-							triangle: Triangle([
-								Point { x: h - 0.1, y: v },
-								Point { x: h + 0.1, y: v },
-								Point { x: h, y: v + 0.1 },
-							]),
-							color: Color {
-								r: 1.0,
-								g: 1.0,
-								b: 1.0,
-								a: 1.0,
-							},
+							points: [
+								[h - 0.1, v].into(),
+								[h + 0.1, v].into(),
+								[h, v + 0.1].into(),
+							],
+							color: [1.0, 1.0, 1.0, 1.0].into(),
 						});
 					}
 

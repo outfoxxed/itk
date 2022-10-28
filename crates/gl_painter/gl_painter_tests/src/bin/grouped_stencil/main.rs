@@ -1,46 +1,23 @@
-use std::{
-	ffi::{CStr, CString},
-	mem::MaybeUninit,
-};
+// Copyright (C) 2022 the ITK authors
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/./
 
-use gl::types::{GLenum, GLfloat};
+use std::ffi::CString;
+
+use gl::types::GLenum;
 use gl_painter::{
-	shader::{Shader, ShaderProgram, ShaderType},
-	upload,
+	drawable::{Drawable, ShaderSource},
+	drawable_data,
+	upload::{self, Uploader},
 };
 use rand::Rng;
 
 fn main() {
-	gl_painter_tests::view_window(false, || {
-		let circle_shader = ShaderProgram::link(
-			&Shader::compile(ShaderType::Vertex, include_str!("circle.vert.glsl")).unwrap(),
-			&Shader::compile(ShaderType::Fragment, include_str!("circle.frag.glsl")).unwrap(),
-		)
-		.unwrap();
-
-		let triangle_shader = ShaderProgram::link(
-			&Shader::compile(ShaderType::Vertex, include_str!("triangle.vert.glsl")).unwrap(),
-			&Shader::compile(ShaderType::Fragment, include_str!("triangle.frag.glsl")).unwrap(),
-		)
-		.unwrap();
-
-		let mut circle_uploader = unsafe {
-			upload::UploaderImpl::<CircleVertex>::new(gl::TRIANGLES, vec![
-				upload::VertexAttribute::new::<f32>(2),
-				upload::VertexAttribute::new::<f32>(2),
-				upload::VertexAttribute::new::<f32>(1),
-				upload::VertexAttribute::new::<f32>(3),
-				upload::VertexAttribute::new::<u16>(1),
-			])
-		};
-
-		let mut triangle_uploader = unsafe {
-			upload::UploaderImpl::<TriangleVertex>::new(gl::TRIANGLES, vec![
-				upload::VertexAttribute::new::<f32>(2),
-				upload::VertexAttribute::new::<f32>(3),
-				upload::VertexAttribute::new::<u16>(1),
-			])
-		};
+	gl_painter_tests::view_window(true, || {
+		let mut triangle_uploader = unsafe { upload::compat::CompatUploader::<Triangle>::new() };
+		let mut circle_uploader = unsafe { upload::ssbo::SsboUploader::<Circle>::new() };
 
 		struct StencilGroup {
 			stencil: u16,
@@ -83,46 +60,22 @@ fn main() {
 		let mut triangles = Vec::<MovingShape<Triangle>>::new();
 
 		unsafe fn upload_circles(
-			uploader: &mut upload::UploaderImpl<CircleVertex>,
+			uploader: &mut upload::ssbo::SsboUploader<Circle>,
 			circles: &[MovingShape<Circle>],
 		) {
 			uploader.prepare_write();
-			let (mut vbuf, mut ibuf) = uploader.write();
-
-			vbuf.resize(circles.len() * 4);
-			ibuf.resize(circles.len() * 6);
-			for (i, circle) in circles.iter().enumerate() {
-				let (circle_v, mut circle_i) = circle.shape.vertices();
-				for ci in circle_i.iter_mut() {
-					*ci = *ci + i as u32 * 4;
-				}
-
-				vbuf.write(i * 4, &circle_v);
-				ibuf.write(i * 6, &circle_i);
-			}
-
+			uploader.clear();
+			circles.iter().for_each(|c| uploader.write(c.shape.clone()));
 			uploader.begin_flush();
 		}
 
 		unsafe fn upload_triangles(
-			uploader: &mut upload::UploaderImpl<TriangleVertex>,
+			uploader: &mut upload::compat::CompatUploader<Triangle>,
 			triangles: &[MovingShape<Triangle>],
 		) {
 			uploader.prepare_write();
-			let (mut vbuf, mut ibuf) = uploader.write();
-
-			vbuf.resize(triangles.len() * 3);
-			ibuf.resize(triangles.len() * 3);
-			for (i, triangle) in triangles.iter().enumerate() {
-				let (triangle_v, mut triangle_i) = triangle.shape.vertices();
-				for ti in triangle_i.iter_mut() {
-					*ti = *ti + i as u32 * 3;
-				}
-
-				vbuf.write(i * 3, &triangle_v);
-				ibuf.write(i * 3, &triangle_i);
-			}
-
+			uploader.clear();
+			triangles.iter().for_each(|t| uploader.write(t.shape.clone()));
 			uploader.begin_flush();
 		}
 
@@ -207,18 +160,22 @@ fn main() {
 			gl::DrawBuffers(2, &[gl::COLOR_ATTACHMENT0, gl::COLOR_ATTACHMENT1] as *const [u32]
 				as *const GLenum);
 			gl::ClearBufferuiv(gl::COLOR, 1, &0);
-			circle_shader.bind();
+			circle_uploader.bind();
 			circle_uploader.upload();
 			gl::DrawBuffers(1, &[gl::COLOR_ATTACHMENT0] as *const [u32] as *const GLenum);
 
 			gl::ActiveTexture(gl::TEXTURE1);
 			gl::BindTexture(gl::TEXTURE_2D, stencil_texture);
-			triangle_shader.bind();
+			triangle_uploader.shader_program().bind();
 			let stencil_str = CString::new("stencil").unwrap();
 			gl::Uniform1i(
-				gl::GetUniformLocation(triangle_shader.program_object, stencil_str.as_ptr()),
+				gl::GetUniformLocation(
+					triangle_uploader.shader_program().program_object,
+					stencil_str.as_ptr(),
+				),
 				1,
 			);
+			triangle_uploader.bind();
 			triangle_uploader.upload();
 
 			gl::BindFramebuffer(gl::READ_FRAMEBUFFER, framebuffer);
@@ -281,29 +238,28 @@ fn main() {
 	});
 }
 
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-#[repr(C, packed)]
-struct CircleVertex {
-	position: [f32; 2],
-	origin: [f32; 2],
+drawable_data!(CircleData {
+	origin: Vec2,
 	radius: f32,
-	color: [f32; 3],
-	stencil: u16,
-}
+	color: Vec3,
+	stencil: u32,
+});
 
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-#[repr(C, packed)]
-struct TriangleVertex {
-	position: [f32; 2],
-	color: [f32; 3],
-	stencil: u16,
-}
+drawable_data!(CircleVertex { position: Vec2 });
+
+drawable_data!(TriangleData {
+	color: Vec3,
+	stencil: u32,
+});
+
+drawable_data!(TriangleVertex { position: Vec2 });
 
 trait Shape {
 	fn position(&mut self) -> &mut [f32; 2];
 	fn shape(&self) -> [[f32; 2]; 2];
 }
 
+#[derive(Clone)]
 struct Circle {
 	origin: [f32; 2],
 	radius: f32,
@@ -311,6 +267,7 @@ struct Circle {
 	stencil: u16,
 }
 
+#[derive(Clone)]
 struct Triangle {
 	position: [f32; 2],
 	size: f32,
@@ -318,63 +275,74 @@ struct Triangle {
 	stencil: u16,
 }
 
-impl Circle {
-	#[rustfmt::skip]
-	fn vertices(&self) -> ([CircleVertex; 4], [u32; 6]) {
+impl Drawable for Circle {
+	type Drawable = CircleData;
+	type Vertex = CircleVertex;
+
+	const GL_TYPE: GLenum = gl::TRIANGLES;
+	const SHADER_SOURCE: ShaderSource = ShaderSource {
+		vertex_compat: include_str!("circle.vertex_compat.glsl"),
+		vertex_ssbo: include_str!("circle.vertex_ssbo.glsl"),
+		fragment: include_str!("circle.fragment.glsl"),
+	};
+
+	fn drawable_data(&self) -> Self::Drawable {
+		CircleData {
+			origin: self.origin.into(),
+			radius: self.radius,
+			color: self.color.into(),
+			stencil: self.stencil as u32,
+		}
+	}
+
+	fn drawable_vertices(&self, vertices: &mut Vec<Self::Vertex>, indices: &mut Vec<u32>) {
 		let mk_vertex = |x, y| CircleVertex {
 			position: [
 				self.origin[0] + (self.radius * x as f32),
 				self.origin[1] + (self.radius * y as f32),
-			],
-			origin: self.origin,
-			radius: self.radius,
-			color: self.color,
-			stencil: self.stencil,
+			]
+			.into(),
 		};
-		(
-			[
-				mk_vertex(-1, -1),
-				mk_vertex(-1, 1),
-				mk_vertex(1, -1),
-				mk_vertex(1, 1),
-			],
-			[0, 1, 2, 1, 2, 3],
-		)
+
+		vertices.extend_from_slice(&[
+			mk_vertex(-1, -1),
+			mk_vertex(-1, 1),
+			mk_vertex(1, -1),
+			mk_vertex(1, 1),
+		]);
+
+		indices.extend_from_slice(&[0, 1, 2, 1, 2, 3]);
 	}
 }
 
-impl Triangle {
-	#[rustfmt::skip]
-	fn vertices(&self) -> ([TriangleVertex; 3], [u32; 3]) {
-		(
-			[
-				TriangleVertex {
-					position: [
-						self.position[0],
-						self.position[1] + self.size,
-					],
-					color: self.color,
-					stencil: self.stencil,
-				},
-				TriangleVertex {
-					position: [
-						self.position[0] - self.size,
-						self.position[1] - self.size,
-					],
-					color: self.color,
-					stencil: self.stencil,
-				},
-				TriangleVertex {
-					position: [
-						self.position[0] + self.size,
-						self.position[1] - self.size,
-					],
-					color: self.color,
-					stencil: self.stencil,
-				}
-			],
-			[0, 1, 2],
-		)
+impl Drawable for Triangle {
+	type Drawable = TriangleData;
+	type Vertex = TriangleVertex;
+
+	const GL_TYPE: GLenum = gl::TRIANGLES;
+	const SHADER_SOURCE: ShaderSource = ShaderSource {
+		vertex_compat: include_str!("triangle.vertex_compat.glsl"),
+		vertex_ssbo: include_str!("triangle.vertex_ssbo.glsl"),
+		fragment: include_str!("triangle.fragment.glsl"),
+	};
+
+	fn drawable_data(&self) -> Self::Drawable {
+		TriangleData {
+			color: self.color.into(),
+			stencil: self.stencil as u32,
+		}
+	}
+
+	fn drawable_vertices(&self, vertices: &mut Vec<Self::Vertex>, indices: &mut Vec<u32>) {
+		let triangle = [
+			[self.position[0], self.position[1] + self.size],
+			[self.position[0] - self.size, self.position[1] - self.size],
+			[self.position[0] + self.size, self.position[1] - self.size],
+		];
+
+		vertices.extend(triangle.into_iter().map(|p| TriangleVertex { position: p.into() }));
+
+		indices.extend_from_slice(&[0, 1, 2]);
 	}
 }
 
