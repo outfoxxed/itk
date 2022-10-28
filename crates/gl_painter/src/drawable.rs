@@ -105,28 +105,28 @@ pub trait DrawableData {
 
 #[macro_export]
 macro_rules! drawable_data {
-	($name:ident { $($field:ident: $type:ident,)* }) => {
+	($name:ident { $($field:ident: $type:ident),* $(,)? }) => {
 		::paste::paste! {
 			#[derive(Clone)]
 			pub struct $name {
-				$($field: $crate::drawable::drawable_data!(|vr| $type),)*
+				$($field: $crate::drawable::drawable_data!(|vr| $type)),*
 			}
 
 			#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Debug)]
 			#[repr(C, packed)]
 			pub struct [<$name Packed>] {
-				$($field: $crate::drawable::drawable_data!(|vp| $type),)*
+				$($field: $crate::drawable::drawable_data!(|vp| $type)),*
 			}
 
 			#[derive(Copy, Clone, bytemuck::AnyBitPattern)]
 			#[repr(C)]
 			pub struct [<$name Aligned>] {
-				$($field: $crate::drawable::drawable_data!(|va| $type),)*
+				$($field: $crate::drawable::drawable_data!(|va| $type)),*
 			}
 
 			impl $crate::drawable::VertexPassable for [<$name Packed>] {
 				const VERTEX_ATTRIBUTES: &'static [$crate::upload::attribute::VertexAttribute] = &[
-					$($crate::drawable::drawable_data!(|atr| $type),)*
+					$($crate::drawable::drawable_data!(|atr| $type)),*
 				];
 			}
 
@@ -149,7 +149,7 @@ macro_rules! drawable_data {
 				#[inline]
 				fn from(r: $name) -> Self {
 					Self {
-						$($field: $crate::drawable::drawable_data!(|i| r.$field: $type),)*
+						$($field: $crate::drawable::drawable_data!(|i| r.$field: $type)),*
 					}
 				}
 			}
@@ -158,7 +158,7 @@ macro_rules! drawable_data {
 				#[inline]
 				fn from(r: $name) -> Self {
 					Self {
-						$($field: $crate::drawable::drawable_data!(|i| r.$field: $type),)*
+						$($field: $crate::drawable::drawable_data!(|i| r.$field: $type)),*
 					}
 				}
 			}
