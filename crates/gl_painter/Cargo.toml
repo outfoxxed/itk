@@ -9,3 +9,6 @@ gl = "^0.14"
 paste = "^1.0"
 seq-macro = "^0.3"
 thiserror = "^1.0"
+
+[dependencies.glsl_preprocess]
+path = "glsl_preprocess"

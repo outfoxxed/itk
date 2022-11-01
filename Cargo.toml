@@ -4,5 +4,6 @@ resolver = "2"
 members = [
 	"crates/itk",
 	"crates/gl_painter",
+	"crates/gl_painter/glsl_preprocess",
 	"crates/gl_painter/gl_painter_tests",
 ]
