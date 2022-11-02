@@ -8,6 +8,7 @@ fn test_preprocessor() {
 	let (text, line_map) = preprocess(
 		&fs::read_to_string("src/preprocessor/test/test_preprocessor.glsl").unwrap(),
 		Path::new("src/preprocessor/test"),
+		Path::new("src/preprocessor/test"),
 		HashMap::new(),
 	)
 	.unwrap();
@@ -37,5 +38,6 @@ fn test_preprocessor() {
 		(17, LineId { line: 6, file: Some(inc_file.clone()) }),
 		(18, LineId { line: 15, file: Some(inc_file.clone()) }),
 		(19, LineId { line: 13, file: None }),
+		(20, LineId { line: 26, file: None }),
 	]));
 }

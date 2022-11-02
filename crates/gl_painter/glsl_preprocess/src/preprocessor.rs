@@ -66,6 +66,7 @@ impl Debug for LineId {
 pub fn preprocess(
 	source: &str,
 	dir: &Path,
+	basedir: &Path,
 	mut defines: HashMap<String, String>,
 ) -> Result<(String, HashMap<usize, LineId>), PreprocError> {
 	struct MatchDirective {
@@ -141,26 +142,39 @@ pub fn preprocess(
 							}),
 					};
 
-					// get the match's target case from the defines list
-					let target_case = match defines.get(condition) {
-						Some(x) => x,
-						None =>
-							return Err(PreprocError {
-								ty: PreprocErrorType::UndefinedTarget(condition.to_owned()),
-								span: span(),
+					if let WriteState::Skip =
+						token_stack.last().map(|e| &e.write).unwrap_or(&WriteState::Write)
+					{
+						token_stack.push(PreprocEntry {
+							token: PreprocToken::Match(MatchDirective {
+								target_case: String::new(),
+								hit_cases: Vec::new(),
 							}),
-					};
+							write: WriteState::Skip,
+							span: span(),
+						});
+					} else {
+						// get the match's target case from the defines list
+						let target_case = match defines.get(condition) {
+							Some(x) => x,
+							None =>
+								return Err(PreprocError {
+									ty: PreprocErrorType::UndefinedTarget(condition.to_owned()),
+									span: span(),
+								}),
+						};
 
-					token_stack.push(PreprocEntry {
-						token: PreprocToken::Match(MatchDirective {
-							target_case: target_case.clone(),
-							hit_cases: Vec::new(),
-						}),
-						write: WriteState::Error(
-							"code in a match block is only allowed inside case blocks",
-						),
-						span: span(),
-					});
+						token_stack.push(PreprocEntry {
+							token: PreprocToken::Match(MatchDirective {
+								target_case: target_case.clone(),
+								hit_cases: Vec::new(),
+							}),
+							write: WriteState::Error(
+								"code in a match block is only allowed inside case blocks",
+							),
+							span: span(),
+						});
+					}
 				},
 				"case" => {
 					let (match_directive, write_block) = match token_stack.last_mut() {
@@ -207,12 +221,13 @@ pub fn preprocess(
 					};
 				},
 				"endmatch" => {
-					let (match_directive, match_span) = match token_stack.last() {
+					let (match_directive, match_span, write) = match token_stack.last() {
 						Some(PreprocEntry {
 							token: PreprocToken::Match(match_directive),
 							span,
+							write,
 							..
-						}) => (match_directive, span),
+						}) => (match_directive, span, write),
 						Some(_) | None =>
 							return Err(PreprocError {
 								ty: PreprocErrorType::Other(
@@ -222,18 +237,25 @@ pub fn preprocess(
 							}),
 					};
 
-					// error if we missed a case used in a preproc macro
-					if !match_directive.hit_cases.iter().any(|h| h == &match_directive.target_case)
-					{
-						return Err(PreprocError {
-							ty: PreprocErrorType::MissedCase(
-								match_directive.target_case.to_owned(),
-							),
-							span: match_span.clone(),
-						})
-					}
+					if let WriteState::Skip = write {
+						token_stack.pop();
+					} else {
+						// error if we missed a case used in a preproc macro
+						if !match_directive
+							.hit_cases
+							.iter()
+							.any(|h| h == &match_directive.target_case)
+						{
+							return Err(PreprocError {
+								ty: PreprocErrorType::MissedCase(
+									match_directive.target_case.to_owned(),
+								),
+								span: match_span.clone(),
+							})
+						}
 
-					token_stack.pop();
+						token_stack.pop();
+					}
 				},
 				"define" => {
 					let (key, val) = match args {
@@ -268,7 +290,14 @@ pub fn preprocess(
 				"include" => {
 					let (file, filename) = match args {
 						Some(x) => {
-							let path = dir.join(std::path::Path::new(x.trim()));
+							let path = {
+								let p = x.trim();
+								if p.starts_with('/') {
+									basedir.join(Path::new(&p[1..]))
+								} else {
+									dir.join(Path::new(p))
+								}
+							};
 
 							(
 								fs::read_to_string(&path).map_err(|e| PreprocError {
@@ -345,20 +374,31 @@ pub fn preprocess(
 				Ok(())
 			};
 
-			match token_stack.last() {
-				None => write_str()?,
-				Some(PreprocEntry { write, .. }) => match write {
-					WriteState::Skip => {},
-					WriteState::Write => write_str()?,
-					WriteState::Error(e) =>
-						return Err(PreprocError {
-							ty: PreprocErrorType::Other(e),
-							span: SourceSpan {
-								line: line_id,
-								snip: line.to_owned(),
-							},
-						}),
-				},
+			// make write_state the most limiting value in the stack
+			let write_state = {
+				let mut write_state = &WriteState::Write;
+				for PreprocEntry { write: state, .. } in token_stack.iter().rev() {
+					write_state = match (write_state, state) {
+						(&WriteState::Write, state) => state,
+						(_, &WriteState::Error(_)) => state,
+						(..) => write_state,
+					}
+				}
+
+				write_state
+			};
+
+			match write_state {
+				WriteState::Skip => {},
+				WriteState::Write => write_str()?,
+				WriteState::Error(e) =>
+					return Err(PreprocError {
+						ty: PreprocErrorType::Other(e),
+						span: SourceSpan {
+							line: line_id,
+							snip: line.to_owned(),
+						},
+					}),
 			}
 		}
 	}

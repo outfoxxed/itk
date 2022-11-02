@@ -11,3 +11,17 @@ test2
 @include include.glsl
 
 test3
+
+@define outer_match c
+@match outer_match
+	@case a
+		@define defined_in_cold_case asd
+		@match defined_in_cold_case
+			@case asd
+			@case fgh
+		@endmatch
+	@case b
+		do_not_show
+	@case c
+		test4
+@endmatch

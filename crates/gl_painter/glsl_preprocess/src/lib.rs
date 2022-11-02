@@ -4,7 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/./
 
-use std::{collections::HashMap, fs, io};
+use std::{collections::HashMap, fs, io, path::Path};
 
 use proc_macro2::Span;
 use syn::{
@@ -139,7 +139,7 @@ impl Parse for PreprocessData {
 pub fn preprocess_glsl(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 	let preprocess_data = parse_macro_input!(tokens as PreprocessData);
 	let manifest_dir = std::env::vars().find(|(key, _)| key == "CARGO_MANIFEST_DIR").unwrap().1;
-	let filepath = std::path::Path::new(&manifest_dir).join(&preprocess_data.file.value());
+	let filepath = Path::new(&manifest_dir).join(&preprocess_data.file.value());
 
 	// closure to use the ? operator
 	let r = (|| -> Result<proc_macro::TokenStream, syn::Error> {
@@ -165,10 +165,13 @@ pub fn preprocess_glsl(tokens: proc_macro::TokenStream) -> proc_macro::TokenStre
 			.map(|(k, v)| (k.to_string(), v.to_string()))
 			.collect::<HashMap<String, String>>();
 
-		let (src, line_mapping) =
-			preprocessor::preprocess(&shader_source, filepath.parent().unwrap(), defines).map_err(
-				|e| syn::Error::new(Span::call_site(), format!("error in shader: {e:#}")),
-			)?;
+		let (src, line_mapping) = preprocessor::preprocess(
+			&shader_source,
+			filepath.parent().unwrap(),
+			Path::new(&manifest_dir),
+			defines,
+		)
+		.map_err(|e| syn::Error::new(Span::call_site(), format!("error in shader: {e:#}")))?;
 
 		validate::validate_shader(&src, &preprocess_data.ty, &line_mapping).map_err(|e| {
 			syn::Error::new(
