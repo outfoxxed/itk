@@ -19,9 +19,11 @@ use syn::{
 };
 
 mod preprocessor;
+mod validate;
 
 struct PreprocessData {
 	file: LitStr,
+	ty: String,
 	defines: HashMap<Ident, Ident>,
 }
 
@@ -35,7 +37,7 @@ impl Parse for PreprocessData {
 	// }
 	fn parse(input: ParseStream) -> syn::Result<Self> {
 		enum Entry {
-			Shader(LitStr),
+			Shader(String, LitStr),
 			Defines(HashMap<Ident, Ident>),
 		}
 
@@ -47,10 +49,17 @@ impl Parse for PreprocessData {
 
 				Ok((key.span(), match &key.to_string()[..] {
 					// shader: "shader_file.glsl"
-					"shader" => Ok(Entry::Shader(match input.parse::<Lit>()? {
-						Lit::Str(x) => Ok(x),
-						other => Err(syn::Error::new(other.span(), "Expected string")),
-					}?)),
+					"shader" => {
+						let ty = input.parse::<Ident>()?;
+						if ty != "vert" && ty != "frag" {
+							Err(syn::Error::new(ty.span(), "Expected `vert` or `frag`"))
+						} else {
+							Ok(Entry::Shader(ty.to_string(), match input.parse::<Lit>()? {
+								Lit::Str(x) => Ok(x),
+								other => Err(syn::Error::new(other.span(), "Expected string")),
+							}?))
+						}
+					},
 					// define: { ... }
 					"define" => {
 						let braced;
@@ -94,12 +103,12 @@ impl Parse for PreprocessData {
 				}?))
 			})?;
 
-		let mut shader = Option::<LitStr>::None;
+		let mut shader = Option::<(String, LitStr)>::None;
 		let mut defines = Option::<HashMap<Ident, Ident>>::None;
 
 		for (key_span, entry) in entries {
 			match entry {
-				Entry::Shader(x) => match shader.replace(x) {
+				Entry::Shader(ty, s) => match shader.replace((ty, s)) {
 					Some(_) => Err(syn::Error::new(key_span, "shader source already defined")),
 					None => Ok(()),
 				},
@@ -110,11 +119,14 @@ impl Parse for PreprocessData {
 			}?;
 		}
 
+		let (ty, shader) = match shader {
+			Some(x) => Ok(x),
+			None => Err(syn::Error::new(Span::call_site(), "missing shader source")),
+		}?;
+
 		Ok(PreprocessData {
-			file: match shader {
-				Some(x) => Ok(x),
-				None => Err(syn::Error::new(Span::call_site(), "missing shader source")),
-			}?,
+			file: shader,
+			ty,
 			defines: match defines {
 				Some(x) => Ok(x),
 				None => Err(syn::Error::new(Span::call_site(), "missing define block")),
@@ -155,6 +167,10 @@ pub fn preprocess_glsl(tokens: proc_macro::TokenStream) -> proc_macro::TokenStre
 
 		let src = preprocessor::preprocess(&shader_source, defines)
 			.map_err(|e| syn::Error::new(Span::call_site(), format!("error in shader: {e:#}")))?;
+
+		validate::validate_shader(&src, &preprocess_data.ty).map_err(|e| {
+			syn::Error::new(preprocess_data.file.span(), format!("error in shader:\n{e}"))
+		})?;
 
 		Ok(format!("{src:?}").parse().unwrap())
 	})();

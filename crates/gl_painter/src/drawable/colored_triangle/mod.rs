@@ -20,13 +20,13 @@ impl Drawable for ColoredTriangle {
 	const GL_TYPE: GLenum = gl::TRIANGLES;
 	const SHADER_SOURCE: ShaderSource = ShaderSource {
 		vertex_compat: glsl_preprocess::preprocess_glsl! {
-			shader: "src/drawable/colored_triangle/vertex.glsl",
+			shader: vert "src/drawable/colored_triangle/vertex.glsl",
 			define: {
 				use_ssbo: compat,
 			},
 		},
 		vertex_ssbo: glsl_preprocess::preprocess_glsl! {
-			shader: "src/drawable/colored_triangle/vertex.glsl",
+			shader: vert "src/drawable/colored_triangle/vertex.glsl",
 			define: {
 				use_ssbo: ssbo,
 			},

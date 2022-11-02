@@ -74,6 +74,9 @@ pub fn preprocess(
 
 	for (y, line) in source.lines().enumerate() {
 		if let Some('@') = line.trim_start().chars().next() {
+			// add a newline so validator errors show up on the right line
+			source_buffer.push('\n');
+
 			let span = SourceSpan {
 				line: y,
 				snip: line,
@@ -264,7 +267,7 @@ pub fn preprocess(
 			match token_stack.last() {
 				None => write_str()?,
 				Some(PreprocEntry { write, .. }) => match write {
-					WriteState::Skip => {},
+					WriteState::Skip => source_buffer.push('\n'),
 					WriteState::Write => write_str()?,
 					WriteState::Error(e) =>
 						return Err(PreprocError {
