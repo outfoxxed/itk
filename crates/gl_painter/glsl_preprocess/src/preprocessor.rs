@@ -31,6 +31,8 @@ pub enum PreprocErrorType {
 	MissedCase(String),
 	#[error("duplicate case: {0}")]
 	DuplicateCase(String),
+	#[error("undefined substitution: ${0}")]
+	Undefined(String),
 	#[error("{0}")]
 	Other(&'static str),
 }
@@ -41,9 +43,12 @@ impl Debug for SourceSpan<'_> {
 	}
 }
 
-pub fn preprocess(source: &str, defines: HashMap<String, String>) -> Result<String, PreprocError> {
-	struct MatchDirective<'d> {
-		target_case: &'d str,
+pub fn preprocess(
+	source: &str,
+	mut defines: HashMap<String, String>,
+) -> Result<String, PreprocError> {
+	struct MatchDirective {
+		target_case: String,
 		hit_cases: Vec<String>,
 	}
 
@@ -54,8 +59,8 @@ pub fn preprocess(source: &str, defines: HashMap<String, String>) -> Result<Stri
 	}
 
 	enum PreprocToken<'a, 'd> {
-		Match(MatchDirective<'d>),
-		_TODO(std::marker::PhantomData<&'a ()>),
+		Match(MatchDirective),
+		_TODO(std::marker::PhantomData<(&'a (), &'d ())>),
 	}
 
 	struct PreprocEntry<'a, 'd> {
@@ -103,7 +108,7 @@ pub fn preprocess(source: &str, defines: HashMap<String, String>) -> Result<Stri
 
 					token_stack.push(PreprocEntry {
 						token: PreprocToken::Match(MatchDirective {
-							target_case,
+							target_case: target_case.clone(),
 							hit_cases: Vec::new(),
 						}),
 						write: WriteState::Error(
@@ -151,7 +156,7 @@ pub fn preprocess(source: &str, defines: HashMap<String, String>) -> Result<Stri
 					}
 
 					// let following lines go into
-					*write_block = match cases.contains(&match_directive.target_case) {
+					*write_block = match cases.iter().any(|c| c == &match_directive.target_case) {
 						true => WriteState::Write,
 						false => WriteState::Skip,
 					};
@@ -185,6 +190,36 @@ pub fn preprocess(source: &str, defines: HashMap<String, String>) -> Result<Stri
 
 					token_stack.pop();
 				},
+				"define" => {
+					let (key, val) = match args {
+						Some(x) => match x.trim().split_once(" ") {
+							Some((key, val)) => (key, val),
+							None =>
+								return Err(PreprocError {
+									ty: PreprocErrorType::Malformed("missing definition value"),
+									span,
+								}),
+						},
+						None =>
+							return Err(PreprocError {
+								ty: PreprocErrorType::Malformed("missing definition"),
+								span,
+							}),
+					};
+
+					// allow defines to work with branches, WriteState::Error is ignored.
+					let should_define = match token_stack.last() {
+						Some(x) => match x.write {
+							WriteState::Skip => false,
+							_ => true,
+						},
+						None => true,
+					};
+
+					if should_define {
+						defines.insert(key.to_owned(), val.to_owned());
+					}
+				},
 				_ =>
 					return Err(PreprocError {
 						ty: PreprocErrorType::UnknownDirective,
@@ -192,17 +227,45 @@ pub fn preprocess(source: &str, defines: HashMap<String, String>) -> Result<Stri
 					}),
 			}
 		} else {
+			let mut write_str = || {
+				let mut sub = line;
+				let mut pi = sub.find('$');
+				while let Some(i) = pi {
+					source_buffer.push_str(&sub[..i]);
+					sub = &sub[i + 1..];
+
+					let (define, rest) = match sub.find(' ') {
+						Some(i) => (&sub[..i], &sub[i..]),
+						None => (sub, ""),
+					};
+					sub = rest;
+
+					let value = match defines.get(define) {
+						Some(x) => x,
+						None =>
+							return Err(PreprocError {
+								ty: PreprocErrorType::Undefined(define.to_owned()),
+								span: SourceSpan {
+									line: y,
+									snip: line,
+								},
+							}),
+					};
+
+					source_buffer.push_str(value);
+					pi = sub.find('$');
+				}
+
+				source_buffer.push_str(sub);
+				source_buffer.push('\n');
+				Ok(())
+			};
+
 			match token_stack.last() {
-				None => {
-					source_buffer.push_str(line);
-					source_buffer.push('\n');
-				},
+				None => write_str()?,
 				Some(PreprocEntry { write, .. }) => match write {
 					WriteState::Skip => {},
-					WriteState::Write => {
-						source_buffer.push_str(line);
-						source_buffer.push('\n');
-					},
+					WriteState::Write => write_str()?,
 					WriteState::Error(e) =>
 						return Err(PreprocError {
 							ty: PreprocErrorType::Other(e),

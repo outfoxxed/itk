@@ -1,26 +1,37 @@
 @match use_ssbo
 	@case compat
-		#version 120 core
+		@define glsl_target 2.1
 	@case ssbo
-		#version 430 core
+		@define glsl_target 4.3
 @endmatch
+
+@match glsl_target
+	@case 2.1
+		#version 120
+
+		#define IN(loc) attribute
+		#define OUT varying
+	@case 4.3
+		#version 430 core
+
+		#define IN(loc) layout(location = loc) in
+		#define OUT out
+@endmatch
+
+IN(0) vec2 v_pos;
 
 @match use_ssbo
 	@case compat
-		layout(location = 0) varying vec2 v_pos;
-		layout(location = 1) varying vec4 v_color;
-
-		varying vec4 f_color;
+		IN(1) vec4 v_color;
 	@case ssbo
-		layout(location = 0) in vec2 v_pos;
-		layout(location = 1) in uint s_index;
+		IN(1) uint s_index;
 
 		layout(std430, binding = 0) buffer DrawableSSBO {
 			vec4 s_color[];
 		};
-
-		out vec4 f_color;
 @endmatch
+
+OUT vec4 f_color;
 
 void main() {
 	@match use_ssbo
