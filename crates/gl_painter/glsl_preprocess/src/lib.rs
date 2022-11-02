@@ -165,11 +165,16 @@ pub fn preprocess_glsl(tokens: proc_macro::TokenStream) -> proc_macro::TokenStre
 			.map(|(k, v)| (k.to_string(), v.to_string()))
 			.collect::<HashMap<String, String>>();
 
-		let src = preprocessor::preprocess(&shader_source, defines)
-			.map_err(|e| syn::Error::new(Span::call_site(), format!("error in shader: {e:#}")))?;
+		let (src, line_mapping) =
+			preprocessor::preprocess(&shader_source, filepath.parent().unwrap(), defines).map_err(
+				|e| syn::Error::new(Span::call_site(), format!("error in shader: {e:#}")),
+			)?;
 
-		validate::validate_shader(&src, &preprocess_data.ty).map_err(|e| {
-			syn::Error::new(preprocess_data.file.span(), format!("error in shader:\n{e}"))
+		validate::validate_shader(&src, &preprocess_data.ty, &line_mapping).map_err(|e| {
+			syn::Error::new(
+				preprocess_data.file.span(),
+				format!("error(s) during shader validation:\n{e}"),
+			)
 		})?;
 
 		Ok(format!("{src:?}").parse().unwrap())

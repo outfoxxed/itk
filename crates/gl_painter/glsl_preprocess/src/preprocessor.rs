@@ -4,19 +4,27 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/./
 
-use std::{collections::HashMap, fmt::Debug};
+use std::{
+	borrow::Cow,
+	collections::HashMap,
+	fmt::{Debug, Display},
+	fs,
+	io,
+	path::Path,
+	rc::Rc,
+};
 
 #[derive(Clone)]
-pub struct SourceSpan<'a> {
-	line: usize,
-	snip: &'a str,
+pub struct SourceSpan {
+	line: LineId,
+	snip: String,
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error("{span:?}: {ty}")]
-pub struct PreprocError<'a> {
+pub struct PreprocError {
 	ty: PreprocErrorType,
-	span: SourceSpan<'a>,
+	span: SourceSpan,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -33,20 +41,38 @@ pub enum PreprocErrorType {
 	DuplicateCase(String),
 	#[error("undefined substitution: ${0}")]
 	Undefined(String),
+	#[error(r#"could not include "{0}": {1:#}"#)]
+	Include(String, io::Error),
 	#[error("{0}")]
 	Other(&'static str),
 }
 
-impl Debug for SourceSpan<'_> {
+impl Debug for SourceSpan {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}: {}", self.line + 1, self.snip)
+		write!(f, "{:?}: {}", self.line, self.snip)
+	}
+}
+
+#[derive(Clone)]
+pub struct LineId {
+	file: Option<Rc<String>>,
+	line: usize,
+}
+
+impl Debug for LineId {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match &self.file {
+			Some(file) => write!(f, "{file}: {}", self.line),
+			None => write!(f, "{}", self.line),
+		}
 	}
 }
 
 pub fn preprocess(
 	source: &str,
+	dir: &Path,
 	mut defines: HashMap<String, String>,
-) -> Result<String, PreprocError> {
+) -> Result<(String, HashMap<usize, LineId>), PreprocError> {
 	struct MatchDirective {
 		target_case: String,
 		hit_cases: Vec<String>,
@@ -64,22 +90,43 @@ pub fn preprocess(
 	}
 
 	struct PreprocEntry<'a, 'd> {
-		span: SourceSpan<'a>,
+		span: SourceSpan,
 		token: PreprocToken<'a, 'd>,
 		write: WriteState,
 	}
 
 	let mut source_buffer = String::with_capacity(source.len());
+	let mut source_lines = 1;
 	let mut token_stack = Vec::<PreprocEntry>::new();
 
-	for (y, line) in source.lines().enumerate() {
-		if let Some('@') = line.trim_start().chars().next() {
-			// add a newline so validator errors show up on the right line
-			source_buffer.push('\n');
+	let mut line_buffer = {
+		let source_lines = source.lines().count();
 
-			let span = SourceSpan {
-				line: y,
-				snip: line,
+		source.lines()
+			// `enumerate` dosen't play nice with `lines` and `rev`
+			.rev()
+			.enumerate()
+			.map(|(i, l)| {
+				(
+					LineId {
+						file: None,
+						line: source_lines - i,
+					},
+					Cow::Borrowed(l)
+				)
+			})
+			.collect::<Vec<_>>()
+	};
+
+	let mut line_mapping = HashMap::<usize, LineId>::with_capacity(line_buffer.len());
+
+	while let Some((line_id, line)) = line_buffer.pop() {
+		let line = &*line;
+
+		if let Some('@') = line.trim_start().chars().next() {
+			let span = || SourceSpan {
+				line: line_id,
+				snip: line.to_owned(),
 			};
 
 			let directive = &line.trim_start()[1..].trim_start();
@@ -95,7 +142,7 @@ pub fn preprocess(
 						None =>
 							return Err(PreprocError {
 								ty: PreprocErrorType::Malformed("missing match target"),
-								span,
+								span: span(),
 							}),
 					};
 
@@ -105,7 +152,7 @@ pub fn preprocess(
 						None =>
 							return Err(PreprocError {
 								ty: PreprocErrorType::UndefinedTarget(condition.to_owned()),
-								span,
+								span: span(),
 							}),
 					};
 
@@ -117,7 +164,7 @@ pub fn preprocess(
 						write: WriteState::Error(
 							"code in a match block is only allowed inside case blocks",
 						),
-						span,
+						span: span(),
 					});
 				},
 				"case" => {
@@ -132,7 +179,7 @@ pub fn preprocess(
 								ty: PreprocErrorType::Other(
 									"case directive can only exist inside match",
 								),
-								span,
+								span: span(),
 							}),
 					};
 
@@ -142,7 +189,7 @@ pub fn preprocess(
 						None =>
 							return Err(PreprocError {
 								ty: PreprocErrorType::Malformed("missing case list"),
-								span,
+								span: span(),
 							}),
 					};
 
@@ -151,7 +198,7 @@ pub fn preprocess(
 						if match_directive.hit_cases.iter().any(|h| h == case) {
 							return Err(PreprocError {
 								ty: PreprocErrorType::DuplicateCase(format!("{}", case)),
-								span,
+								span: span(),
 							})
 						} else {
 							match_directive.hit_cases.push(case.to_string());
@@ -176,7 +223,7 @@ pub fn preprocess(
 								ty: PreprocErrorType::Other(
 									"endmatch directive can only exist after match",
 								),
-								span,
+								span: span(),
 							}),
 					};
 
@@ -200,13 +247,13 @@ pub fn preprocess(
 							None =>
 								return Err(PreprocError {
 									ty: PreprocErrorType::Malformed("missing definition value"),
-									span,
+									span: span(),
 								}),
 						},
 						None =>
 							return Err(PreprocError {
 								ty: PreprocErrorType::Malformed("missing definition"),
-								span,
+								span: span(),
 							}),
 					};
 
@@ -223,58 +270,97 @@ pub fn preprocess(
 						defines.insert(key.to_owned(), val.to_owned());
 					}
 				},
+				"include" => {
+					let (file, filename) = match args {
+						Some(x) => {
+							let path = dir.join(std::path::Path::new(x.trim()));
+
+							(
+								fs::read_to_string(&path).map_err(|e| PreprocError {
+									ty: PreprocErrorType::Include(
+										path.to_str().unwrap().to_owned(),
+										e,
+									),
+									span: span(),
+								})?,
+								Rc::new(x.to_owned()),
+							)
+						},
+						None =>
+							return Err(PreprocError {
+								ty: PreprocErrorType::Malformed("missing file to include"),
+								span: span(),
+							}),
+					};
+
+					let source_lines = file.lines().count();
+					line_buffer.extend(file.lines().rev().enumerate().map(|(i, l)| {
+						(
+							LineId {
+								file: Some(filename.clone()),
+								line: source_lines - i,
+							},
+							Cow::Owned(l.to_owned()),
+						)
+					}));
+				},
 				_ =>
 					return Err(PreprocError {
 						ty: PreprocErrorType::UnknownDirective,
-						span,
+						span: span(),
 					}),
 			}
 		} else {
 			let mut write_str = || {
-				let mut sub = line;
-				let mut pi = sub.find('$');
-				while let Some(i) = pi {
-					source_buffer.push_str(&sub[..i]);
-					sub = &sub[i + 1..];
+				if !line.is_empty() {
+					let mut sub = line;
+					let mut pi = sub.find('$');
+					while let Some(i) = pi {
+						source_buffer.push_str(&sub[..i]);
+						sub = &sub[i + 1..];
 
-					let (define, rest) = match sub.find(' ') {
-						Some(i) => (&sub[..i], &sub[i..]),
-						None => (sub, ""),
-					};
-					sub = rest;
+						let (define, rest) = match sub.find(' ') {
+							Some(i) => (&sub[..i], &sub[i..]),
+							None => (sub, ""),
+						};
+						sub = rest;
 
-					let value = match defines.get(define) {
-						Some(x) => x,
-						None =>
-							return Err(PreprocError {
-								ty: PreprocErrorType::Undefined(define.to_owned()),
-								span: SourceSpan {
-									line: y,
-									snip: line,
-								},
-							}),
-					};
+						let value = match defines.get(define) {
+							Some(x) => x,
+							None =>
+								return Err(PreprocError {
+									ty: PreprocErrorType::Undefined(define.to_owned()),
+									span: SourceSpan {
+										line: line_id.clone(),
+										snip: line.to_owned(),
+									},
+								}),
+						};
 
-					source_buffer.push_str(value);
-					pi = sub.find('$');
+						source_buffer.push_str(value);
+						pi = sub.find('$');
+					}
+
+					source_buffer.push_str(sub);
+					source_buffer.push('\n');
+					line_mapping.insert(source_lines, line_id.clone());
+					source_lines += 1;
 				}
 
-				source_buffer.push_str(sub);
-				source_buffer.push('\n');
 				Ok(())
 			};
 
 			match token_stack.last() {
 				None => write_str()?,
 				Some(PreprocEntry { write, .. }) => match write {
-					WriteState::Skip => source_buffer.push('\n'),
+					WriteState::Skip => {},
 					WriteState::Write => write_str()?,
 					WriteState::Error(e) =>
 						return Err(PreprocError {
 							ty: PreprocErrorType::Other(e),
 							span: SourceSpan {
-								line: y,
-								snip: line,
+								line: line_id,
+								snip: line.to_owned(),
 							},
 						}),
 				},
@@ -288,6 +374,6 @@ pub fn preprocess(
 			span: last.span,
 		})
 	} else {
-		Ok(source_buffer)
+		Ok((source_buffer, line_mapping))
 	}
 }
