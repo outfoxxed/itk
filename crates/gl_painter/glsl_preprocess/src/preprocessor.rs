@@ -4,15 +4,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/./
 
-use std::{
-	borrow::Cow,
-	collections::HashMap,
-	fmt::{Debug, Display},
-	fs,
-	io,
-	path::Path,
-	rc::Rc,
-};
+use std::{borrow::Cow, collections::HashMap, fmt::Debug, fs, io, path::Path, rc::Rc};
+
+#[cfg(test)]
+mod test;
 
 #[derive(Clone)]
 pub struct SourceSpan {
@@ -53,7 +48,7 @@ impl Debug for SourceSpan {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct LineId {
 	file: Option<Rc<String>>,
 	line: usize,

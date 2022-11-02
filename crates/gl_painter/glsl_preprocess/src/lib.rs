@@ -29,7 +29,7 @@ struct PreprocessData {
 
 impl Parse for PreprocessData {
 	// glsl_preprocess::preprocess_glsl! {
-	//   shader: "shader_file.glsl",
+	//   shader: type "shader_file.glsl",
 	//   defines: {
 	//	   NAME: VAL,
 	//	   NAME2: VAL2,
