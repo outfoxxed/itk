@@ -4,6 +4,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/./
 
+#![allow(incomplete_features)]
+// Allows use of `-> impl` in traits.
+// Can be desugared if nessesary to support stable,
+// if it hasn't come to stable by the time ITK is usable.
+#![feature(return_position_impl_trait_in_trait)]
+
 use std::ffi::CStr;
 
 pub mod shader;

@@ -24,7 +24,20 @@ pub trait Drawable {
 	const SHADER_SOURCE: ShaderSource;
 
 	fn drawable_data(&self) -> Self::Drawable;
-	fn drawable_vertices(&self, vertices: &mut Vec<Self::Vertex>, indices: &mut Vec<u32>);
+	/// # Note
+	///
+	/// Remember to pray to the LLVM gods. Make everything possible
+	/// related to the returned iterators & drawables' Into<Packed | Aligned>
+	/// implementations #[inline(always)]
+	fn drawable_vertices<'s>(
+		&'s self,
+	) -> (
+		impl IntoIterator<
+			Item = Self::Vertex,
+			IntoIter = impl ExactSizeIterator<Item = Self::Vertex> + 's,
+		>,
+		impl IntoIterator<Item = u32, IntoIter = impl ExactSizeIterator<Item = u32> + 's>,
+	);
 }
 
 pub trait VertexPassable {
@@ -70,18 +83,21 @@ macro_rules! define_vec {
 				pub struct [<$name Aligned>](#($ty,)*);
 
 				impl From<[$ty; $count]> for $name {
+					#[inline(always)]
 					fn from(v: [$ty; $count]) -> Self {
 						Self(#(v[N],)*)
 					}
 				}
 
 				impl From<$name> for [<$name Packed>] {
+					#[inline(always)]
 					fn from(r: $name) -> Self {
 						Self(#(r.N,)*)
 					}
 				}
 
 				impl From<$name> for [<$name Aligned>] {
+					#[inline(always)]
 					fn from(r: $name) -> Self {
 						Self(#(r.N,)*)
 					}
@@ -146,7 +162,7 @@ macro_rules! drawable_data {
 			}
 
 			impl From<$name> for [<$name Packed>] {
-				#[inline]
+				#[inline(always)]
 				fn from(r: $name) -> Self {
 					Self {
 						$($field: $crate::drawable::drawable_data!(|i| r.$field: $type)),*
@@ -155,7 +171,7 @@ macro_rules! drawable_data {
 			}
 
 			impl From<$name> for [<$name Aligned>] {
-				#[inline]
+				#[inline(always)]
 				fn from(r: $name) -> Self {
 					Self {
 						$($field: $crate::drawable::drawable_data!(|i| r.$field: $type)),*

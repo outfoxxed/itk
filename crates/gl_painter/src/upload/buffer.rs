@@ -4,6 +4,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/./
 
+use std::ops::Range;
+
 use gl::types::{GLenum, GLuint};
 
 pub mod compat;
@@ -32,7 +34,7 @@ pub trait GpuBuffer<T: bytemuck::AnyBitPattern> {
 	///
 	/// # SAFETY
 	/// * must have previously called `prepare_write`
-	unsafe fn write(&mut self, offset: usize, data: &[T]);
+	unsafe fn write(&mut self) -> &mut CpuBacker<T>;
 	/// Begin flushing this buffer. Call `ready` to wait for completion.
 	///
 	/// # SAFETY
@@ -75,24 +77,43 @@ pub fn new<T: bytemuck::AnyBitPattern>(buffer_type: GLenum) -> Box<dyn GpuBuffer
 	}
 }
 
-pub struct BufferWriter<'b, T: bytemuck::Pod> {
-	buffer: &'b mut dyn GpuBuffer<T>,
+pub struct CpuBacker<T: bytemuck::AnyBitPattern> {
+	buffer: Vec<T>,
+	modified_range: Option<Range<usize>>,
+	reallocated: bool,
 }
 
-impl<'b, T: bytemuck::Pod> BufferWriter<'b, T> {
-	/// SAFETY
-	/// * buffer must be valid to write to for 'b
-	pub unsafe fn new(buffer: &'b mut dyn GpuBuffer<T>) -> Self {
-		Self { buffer }
+impl<T: bytemuck::AnyBitPattern> CpuBacker<T> {
+	pub fn new() -> Self {
+		Self {
+			buffer: Vec::new(),
+			modified_range: None,
+			reallocated: false,
+		}
 	}
 
-	#[inline]
-	pub fn write(&mut self, offset: usize, data: &[T]) {
-		unsafe { self.buffer.write(offset, data) };
-	}
+	#[inline(always)]
+	pub fn write(
+		&mut self,
+		offset: usize,
+		data: impl IntoIterator<IntoIter = impl ExactSizeIterator<Item = T>>,
+	) {
+		let iter = data.into_iter();
+		let count = iter.len();
 
-	#[inline]
-	pub fn resize(&mut self, size: usize) {
-		self.buffer.resize(size);
+		if offset + count > self.buffer.len() {
+			self.buffer.resize_with(offset, || unreachable!());
+			self.buffer.extend(iter);
+
+			self.reallocated = true;
+		} else {
+			iter.enumerate().for_each(|(i, v)| self.buffer[offset + i] = v);
+		}
+
+		self.modified_range = Some(match &self.modified_range {
+			Some(range) =>
+				usize::min(range.start, offset)..usize::max(range.end, offset + count as usize),
+			None => offset..offset + count,
+		});
 	}
 }

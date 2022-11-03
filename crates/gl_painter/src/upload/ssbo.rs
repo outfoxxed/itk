@@ -112,28 +112,21 @@ impl<D: Drawable> Uploader<D> for SsboUploader<D> {
 
 	unsafe fn write(&mut self, drawable: &D) {
 		let drawable_data = drawable.drawable_data().into_ssbo();
+		let (vertex_data, index_data) = drawable.drawable_vertices();
 
-		// FIXME: excess allocation, move this somewhere else
-		// and/or make buffers accept iterators
-		let mut vertex_data = Vec::new();
-		let mut index_data = Vec::new();
-
-		drawable.drawable_vertices(&mut vertex_data, &mut index_data);
-
-		let combined_vertex_data = vertex_data
-			.into_iter()
-			.map(|vertex| SsboVertex {
-				vertex: vertex.into_compat(),
-				ssbo_index: self.storage_buffer.len() as u32,
-			})
-			.collect::<Vec<_>>();
+		let combined_vertex_data = vertex_data.into_iter().map(|vertex| SsboVertex {
+			vertex: vertex.into_compat(),
+			ssbo_index: self.storage_buffer.len() as u32,
+		});
 
 		let vbo_index = self.vertex_buffer.len();
-		index_data.iter_mut().for_each(|i| *i = vbo_index as u32 + *i);
+		let index_data = index_data.into_iter().map(|i| vbo_index as u32 + i);
 
-		self.vertex_buffer.write(vbo_index, &combined_vertex_data);
-		self.index_buffer.write(self.index_buffer.len(), &index_data);
-		self.storage_buffer.write(self.storage_buffer.len(), &[drawable_data]);
+		self.vertex_buffer.write().write(vbo_index, combined_vertex_data);
+		let index_buffer_len = self.index_buffer.len();
+		self.index_buffer.write().write(index_buffer_len, index_data);
+		let storage_buffer_len = self.storage_buffer.len();
+		self.storage_buffer.write().write(storage_buffer_len, [drawable_data]);
 	}
 
 	unsafe fn begin_flush(&mut self) {

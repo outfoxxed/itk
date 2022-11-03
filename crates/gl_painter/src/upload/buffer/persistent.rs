@@ -4,11 +4,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/./
 
-use std::{ffi::c_void, mem, ops::Range, ptr};
+use std::{ffi::c_void, mem, ptr};
 
 use gl::types::{GLenum, GLsizeiptr, GLsync, GLuint};
 
-use super::GpuBuffer;
+use super::{CpuBacker, GpuBuffer};
 
 // FIXME: Performance seems a bit lower than it should be
 // FIXME: Possible synchronization issues (gpu still reading as buffer is overwritten)
@@ -18,14 +18,12 @@ use super::GpuBuffer;
 /// on the same thread
 pub struct PersistentBuffer<T: bytemuck::AnyBitPattern> {
 	buffer_type: GLenum,
-	buffer: Vec<T>,
+	backer: CpuBacker<T>,
 	mapped_region: *mut T,
 	gl_buffer: GLuint,
-	flush_region: Option<Range<usize>>,
 	gl_buffer_size: usize,
 	flush_fence: GLsync,
 	backing_buffer_changed: bool,
-	size_limit: usize,
 }
 
 // the raw pointer in `PersistentBuffer` sets !Send and !Sync
@@ -35,14 +33,12 @@ impl<T: bytemuck::AnyBitPattern> PersistentBuffer<T> {
 	pub fn new(buffer_type: GLenum) -> Self {
 		Self {
 			buffer_type,
-			buffer: Vec::new(),
+			backer: CpuBacker::new(),
 			mapped_region: ptr::null_mut(),
 			gl_buffer: 0,
-			flush_region: None,
 			gl_buffer_size: 0,
 			flush_fence: ptr::null(),
 			backing_buffer_changed: false,
-			size_limit: 0,
 		}
 	}
 }
@@ -56,42 +52,15 @@ impl<T: bytemuck::AnyBitPattern> GpuBuffer<T> for PersistentBuffer<T> {
 		self.sync_flush();
 	}
 
-	unsafe fn write(&mut self, offset: usize, data: &[T]) {
-		if data.len() == 0 {
-			return
-		}
-
-		let range = offset..offset + data.len();
-
-		if let Some(slice) = self.buffer.get_mut(range.clone()) {
-			slice.clone_from_slice(data);
-			self.size_limit = usize::max(self.size_limit, range.end);
-
-			if !self.mapped_region.is_null()
-				&& self.flush_region.as_ref().map(|r| r.end).unwrap_or(0) <= range.end
-				&& self.gl_buffer_size >= range.end
-			{
-				std::slice::from_raw_parts_mut::<T>(self.mapped_region, self.gl_buffer_size)
-					[range.clone()]
-				.clone_from_slice(data);
-			}
-		} else {
-			self.resize(range.end);
-			self.buffer[range.clone()].clone_from_slice(data);
-		}
-
-		self.flush_region = Some(match &self.flush_region {
-			Some(old_range) =>
-				usize::min(old_range.start, range.start)..usize::max(old_range.end, range.end),
-			None => offset..offset + data.len(),
-		});
+	unsafe fn write(&mut self) -> &mut CpuBacker<T> {
+		&mut self.backer
 	}
 
 	unsafe fn begin_flush(&mut self) {
-		let buffer_len = self.buffer.len() * mem::size_of::<T>();
+		let buffer_len = self.backer.buffer.len() * mem::size_of::<T>();
 
 		// gl buffer size will be 0 if the buffer does not exist
-		if self.gl_buffer_size < self.buffer.len() {
+		if self.gl_buffer_size < self.backer.buffer.len() {
 			if self.gl_buffer != 0 {
 				gl::DeleteBuffers(1, &self.gl_buffer);
 			}
@@ -103,7 +72,7 @@ impl<T: bytemuck::AnyBitPattern> GpuBuffer<T> for PersistentBuffer<T> {
 			gl::BufferStorage(
 				self.buffer_type,
 				buffer_len as GLsizeiptr,
-				self.buffer[..].as_ptr() as *const _ as *const c_void,
+				self.backer.buffer[..].as_ptr() as *const _ as *const c_void,
 				//bytemuck::cast_slice::<T, u8>(&self.buffer).as_ptr() as *const c_void,
 				gl::DYNAMIC_STORAGE_BIT | gl::MAP_PERSISTENT_BIT | gl::MAP_WRITE_BIT,
 			);
@@ -115,17 +84,21 @@ impl<T: bytemuck::AnyBitPattern> GpuBuffer<T> for PersistentBuffer<T> {
 				gl::MAP_PERSISTENT_BIT | gl::MAP_WRITE_BIT | gl::MAP_FLUSH_EXPLICIT_BIT,
 			) as *mut T;
 
-			self.gl_buffer_size = self.buffer.len();
+			self.gl_buffer_size = self.backer.buffer.len();
 			self.backing_buffer_changed = true;
 
 			if self.flush_fence != ptr::null() {
 				gl::DeleteSync(self.flush_fence);
 				self.flush_fence = ptr::null();
 			}
-		} else if let Some(range) = &self.flush_region {
+		} else if let Some(range) = &self.backer.modified_range {
 			// flush region being `Some` means that range is not 0
 
 			self.bind();
+
+			std::slice::from_raw_parts_mut::<T>(self.mapped_region, self.gl_buffer_size)
+				[self.backer.modified_range.as_ref().unwrap().clone()]
+			.clone_from_slice(&self.backer.buffer[range.clone()]);
 
 			gl::FlushMappedBufferRange(
 				self.buffer_type,
@@ -140,7 +113,7 @@ impl<T: bytemuck::AnyBitPattern> GpuBuffer<T> for PersistentBuffer<T> {
 			self.flush_fence = gl::FenceSync(gl::SYNC_GPU_COMMANDS_COMPLETE, 0);
 		}
 
-		self.flush_region = None;
+		self.backer.modified_range = None;
 	}
 
 	unsafe fn sync_flush(&mut self) {
@@ -152,14 +125,11 @@ impl<T: bytemuck::AnyBitPattern> GpuBuffer<T> for PersistentBuffer<T> {
 	}
 
 	fn resize(&mut self, size: usize) {
-		if size > self.buffer.len() {
-			self.buffer.resize(size, T::zeroed());
-		}
-		self.size_limit = size;
+		self.backer.buffer.resize(size, T::zeroed());
 	}
 
 	fn len(&self) -> usize {
-		self.size_limit
+		self.backer.buffer.len()
 	}
 
 	fn has_backing_buffer(&self) -> bool {

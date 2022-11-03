@@ -115,27 +115,19 @@ impl<D: Drawable> Uploader<D> for CompatUploader<D> {
 
 	unsafe fn write(&mut self, drawable: &D) {
 		let drawable_data = drawable.drawable_data().into_compat();
+		let (vertex_data, index_data) = drawable.drawable_vertices();
 
-		// FIXME: excess allocation, move this somewhere else
-		// and/or make buffers accept iterators
-		let mut vertex_data = Vec::new();
-		let mut index_data = Vec::new();
-
-		drawable.drawable_vertices(&mut vertex_data, &mut index_data);
-
-		let combined_vertex_data = vertex_data
-			.into_iter()
-			.map(|vertex| CompatVertex {
-				vertex: vertex.into_compat(),
-				drawable_data: drawable_data.clone(),
-			})
-			.collect::<Vec<_>>();
+		let combined_vertex_data = vertex_data.into_iter().map(|vertex| CompatVertex {
+			vertex: vertex.into_compat(),
+			drawable_data: drawable_data.clone(),
+		});
 
 		let vbo_index = self.vertex_buffer.len();
-		index_data.iter_mut().for_each(|i| *i = vbo_index as u32 + *i);
+		let index_data = index_data.into_iter().map(|i| vbo_index as u32 + i);
 
-		self.vertex_buffer.write(vbo_index, &combined_vertex_data);
-		self.index_buffer.write(self.index_buffer.len(), &index_data);
+		self.vertex_buffer.write().write(vbo_index, combined_vertex_data);
+		let index_buffer_len = self.index_buffer.len();
+		self.index_buffer.write().write(index_buffer_len, index_data);
 	}
 
 	unsafe fn begin_flush(&mut self) {

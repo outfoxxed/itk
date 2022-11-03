@@ -40,9 +40,17 @@ impl Drawable for ColoredTriangle {
 		}
 	}
 
-	fn drawable_vertices(&self, vertices: &mut Vec<Self::Vertex>, indices: &mut Vec<u32>) {
-		vertices.extend(self.points.iter().map(|p| ColoredTriangleVertex { pos: p.clone() }));
-		indices.extend_from_slice(&[0, 1, 2]);
+	#[inline(always)]
+	fn drawable_vertices<'s>(
+		&'s self,
+	) -> (
+		impl IntoIterator<
+			Item = Self::Vertex,
+			IntoIter = impl ExactSizeIterator<Item = Self::Vertex> + 's,
+		>,
+		impl IntoIterator<Item = u32, IntoIter = impl ExactSizeIterator<Item = u32> + 's>,
+	) {
+		(self.points.iter().map(|p| ColoredTriangleVertex { pos: p.clone() }), [0, 1, 2])
 	}
 }
 

@@ -4,6 +4,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/./
 
+#![allow(incomplete_features)]
+// Allows use of `-> impl` in traits.
+// Can be desugared if nessesary to support stable,
+// if it hasn't come to stable by the time ITK is usable.
+#![feature(return_position_impl_trait_in_trait)]
+
 use std::ffi::CString;
 
 use gl::types::GLenum;
@@ -295,23 +301,26 @@ impl Drawable for Circle {
 		}
 	}
 
-	fn drawable_vertices(&self, vertices: &mut Vec<Self::Vertex>, indices: &mut Vec<u32>) {
-		let mk_vertex = |x, y| CircleVertex {
-			position: [
-				self.origin[0] + (self.radius * x as f32),
-				self.origin[1] + (self.radius * y as f32),
-			]
-			.into(),
-		};
-
-		vertices.extend_from_slice(&[
-			mk_vertex(-1, -1),
-			mk_vertex(-1, 1),
-			mk_vertex(1, -1),
-			mk_vertex(1, 1),
-		]);
-
-		indices.extend_from_slice(&[0, 1, 2, 1, 2, 3]);
+	#[inline(always)]
+	fn drawable_vertices<'s>(
+		&'s self,
+	) -> (
+		impl IntoIterator<
+			Item = Self::Vertex,
+			IntoIter = impl ExactSizeIterator<Item = Self::Vertex> + 's,
+		>,
+		impl IntoIterator<Item = u32, IntoIter = impl ExactSizeIterator<Item = u32> + 's>,
+	) {
+		(
+			[(-1, -1), (-1, 1), (1, -1), (1, 1)].map(|(x, y)| CircleVertex {
+				position: [
+					self.origin[0] + (self.radius * x as f32),
+					self.origin[1] + (self.radius * y as f32),
+				]
+				.into(),
+			}),
+			[0, 1, 2, 1, 2, 3],
+		)
 	}
 }
 
@@ -333,16 +342,26 @@ impl Drawable for Triangle {
 		}
 	}
 
-	fn drawable_vertices(&self, vertices: &mut Vec<Self::Vertex>, indices: &mut Vec<u32>) {
-		let triangle = [
-			[self.position[0], self.position[1] + self.size],
-			[self.position[0] - self.size, self.position[1] - self.size],
-			[self.position[0] + self.size, self.position[1] - self.size],
-		];
-
-		vertices.extend(triangle.into_iter().map(|p| TriangleVertex { position: p.into() }));
-
-		indices.extend_from_slice(&[0, 1, 2]);
+	#[inline(always)]
+	fn drawable_vertices<'s>(
+		&'s self,
+	) -> (
+		impl IntoIterator<
+			Item = Self::Vertex,
+			IntoIter = impl ExactSizeIterator<Item = Self::Vertex> + 's,
+		>,
+		impl IntoIterator<Item = u32, IntoIter = impl ExactSizeIterator<Item = u32> + 's>,
+	) {
+		(
+			[
+				[self.position[0], self.position[1] + self.size],
+				[self.position[0] - self.size, self.position[1] - self.size],
+				[self.position[0] + self.size, self.position[1] - self.size],
+			]
+			.into_iter()
+			.map(|p| TriangleVertex { position: p.into() }),
+			[0, 1, 2],
+		)
 	}
 }
 

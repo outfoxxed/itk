@@ -4,11 +4,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/./
 
-use std::{ffi::c_void, marker::PhantomData, mem, ops::Range, sync::MutexGuard};
+use std::{ffi::c_void, marker::PhantomData, mem, sync::MutexGuard};
 
 use gl::types::{GLenum, GLsizeiptr, GLuint};
 
-use super::GpuBuffer;
+use super::{CpuBacker, GpuBuffer};
 
 /// GPU buffer implemented with `glBufferSubData`
 ///
@@ -16,9 +16,8 @@ use super::GpuBuffer;
 /// on the same thread
 pub struct CompatBuffer<T: bytemuck::AnyBitPattern> {
 	buffer_type: GLenum,
-	buffer: Vec<T>,
+	backer: CpuBacker<T>,
 	gl_buffer: GLuint,
-	flush_region: Option<Range<usize>>,
 	gl_buffer_size: usize,
 	backing_buffer_changed: bool,
 	_unsend: PhantomData<MutexGuard<'static, ()>>,
@@ -28,9 +27,8 @@ impl<T: bytemuck::AnyBitPattern> CompatBuffer<T> {
 	pub fn new(buffer_type: GLenum) -> Self {
 		Self {
 			buffer_type,
-			buffer: Vec::new(),
+			backer: CpuBacker::new(),
 			gl_buffer: 0,
-			flush_region: None,
 			gl_buffer_size: 0,
 			backing_buffer_changed: false,
 			_unsend: PhantomData,
@@ -45,31 +43,15 @@ impl<T: bytemuck::AnyBitPattern> GpuBuffer<T> for CompatBuffer<T> {
 
 	unsafe fn prepare_write(&mut self) {}
 
-	unsafe fn write(&mut self, offset: usize, data: &[T]) {
-		if data.len() == 0 {
-			return
-		}
-
-		let range = offset..offset + data.len();
-		if let Some(slice) = self.buffer.get_mut(range.clone()) {
-			slice.clone_from_slice(data);
-		} else {
-			self.resize(range.end);
-			self.buffer[range.clone()].clone_from_slice(data);
-		}
-
-		self.flush_region = Some(match &self.flush_region {
-			Some(old_range) =>
-				usize::min(old_range.start, range.start)..usize::max(old_range.end, range.end),
-			None => offset..offset + data.len(),
-		});
+	unsafe fn write(&mut self) -> &mut CpuBacker<T> {
+		&mut self.backer
 	}
 
 	unsafe fn begin_flush(&mut self) {
-		let buffer_len = (self.buffer.len() * mem::size_of::<T>()) as GLsizeiptr;
+		let buffer_len = (self.backer.buffer.len() * mem::size_of::<T>()) as GLsizeiptr;
 
 		// gl buffer size will be 0 if the buffer does not exist
-		if self.gl_buffer_size < self.buffer.len() {
+		if self.gl_buffer_size < self.backer.buffer.len() {
 			if self.gl_buffer == 0 {
 				gl::GenBuffers(1, &mut self.gl_buffer);
 				gl::BindBuffer(self.buffer_type, self.gl_buffer);
@@ -82,13 +64,13 @@ impl<T: bytemuck::AnyBitPattern> GpuBuffer<T> for CompatBuffer<T> {
 			gl::BufferData(
 				self.buffer_type,
 				buffer_len,
-				self.buffer[..].as_ptr() as *const _ as *const c_void,
+				self.backer.buffer[..].as_ptr() as *const _ as *const c_void,
 				//bytemuck::cast_slice::<T, u8>(&self.buffer).as_ptr() as *const c_void,
 				gl::DYNAMIC_DRAW,
 			);
 
-			self.gl_buffer_size = self.buffer.len();
-		} else if let Some(range) = &self.flush_region {
+			self.gl_buffer_size = self.backer.buffer.len();
+		} else if let Some(range) = &self.backer.modified_range {
 			// flush region being `Some` means that range is not 0
 
 			self.bind();
@@ -98,22 +80,22 @@ impl<T: bytemuck::AnyBitPattern> GpuBuffer<T> for CompatBuffer<T> {
 				self.buffer_type,
 				(range.start * mem::size_of::<T>()) as GLsizeiptr,
 				(range.end * mem::size_of::<T>()) as GLsizeiptr,
-				self.buffer[..].as_ptr() as *const _ as *const c_void,
+				self.backer.buffer[..].as_ptr() as *const _ as *const c_void,
 				//bytemuck::cast_slice::<T, u8>(&self.buffer).as_ptr() as *const c_void,
 			);
 		}
 
-		self.flush_region = None;
+		self.backer.modified_range = None;
 	}
 
 	unsafe fn sync_flush(&mut self) {}
 
 	fn resize(&mut self, size: usize) {
-		self.buffer.resize(size, T::zeroed());
+		self.backer.buffer.resize(size, T::zeroed());
 	}
 
 	fn len(&self) -> usize {
-		self.buffer.len()
+		self.backer.buffer.len()
 	}
 
 	fn has_backing_buffer(&self) -> bool {
